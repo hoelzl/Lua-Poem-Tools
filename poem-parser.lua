@@ -13,9 +13,13 @@ local C, Cb, Cc, Cg, Cs, Ct =
 local poem_parser = {}
 
 local digit = R'09'
-local special_char = S'_+-%*/$&@#^<>=|'
-local operator_char = special_char + S'!?,;.:'
-local word_char = R('AZ', 'az') + digit + special_char
+local special_char = S'_+-%*/$&@#^<>='
+local non_word_char = special_char + S'!?;:'
+local reserved_char = S'|,.'
+local word_start_char = R('az')
+local word_char = word_start_char + digit + special_char
+local operator_start_char = special_char + non_word_char
+local operator_char = operator_start_char + reserved_char
 
 local function K (k)
   return P(k) * -word_char;
@@ -37,6 +41,20 @@ local function make_sequence_node (t)
    local result = {}
    result.type = t[1]
    result.elements = table.slice(t, 3)
+   return result
+end
+
+local function make_modified_term_node (t)
+   local result = {}
+   result.type = t[1]
+   result.value = t[3]
+   return result
+end
+
+local function make_quoted_atom_node (t)
+   local result = {}
+   result.type = t[1]
+   result.value = string.sub(t[2], 2, -2)
    return result
 end
 
@@ -83,10 +101,14 @@ poem_parser.node = node
 local lexer_table = {
    digit = digit;
    special_char = special_char;
-   operator_char = operator_char;
+   non_word_char = non_word_char;
+   reserved_char = reserved_char;
+   word_start_char = word_start_char;
    word_char = word_char;
-   
-   keywords = K('not') + K('and') + K('or') + K('forall') + K('exists');
+   operator_start_char = operator_start_char;
+   operator_char = operator_char;
+
+   keywords = K('forall') + K('exists');
 
    comment = P'--' * (P(1) - P'\n')^0 * (P'\n' + -P(1));
    ws = (S('\r\n\f\t ') + V'comment')^0;
@@ -108,32 +130,46 @@ local lexer_table = {
       V'ws';
 
    atom_word = V'ws' *
-      node("atom", (R'az' * word_char^0 * -S'!?') - V'keywords') *
+      node("word", (word_start_char * word_char^0) - V'keywords') *
       V'ws';
-   atom_sign = V'ws' *
-      node("atom", operator_char^1) *
+   atom_operator = V'ws' *
+      node("operator",
+	   ((operator_start_char^1 * operator_char^0) + 
+	    (reserved_char^1 * operator_char^1)) - P':-') *
       V'ws';
    quoted_atom = V'ws' *
-      node("atom", P'\'' * (P'\\' * P(1) + (1 - P'\''))^0 * P'\'') *
+      node("quoted_atom", 
+	   P'\'' * (P'\\' * P(1) + (1 - P'\''))^0 * P'\'',
+	  make_quoted_atom_node) *
       V'ws';
-   atom = V'atom_word' + V'atom_sign' + V'quoted_atom';
+   atom = V'atom_word' + V'atom_operator' + V'quoted_atom';
    constant = V'atom' + V'number' + V'string';
 
+   relaxed_atom_operator = V'ws' *
+      node("operator",
+	   ((operator_start_char^1 * operator_char^0) + 
+	    (reserved_char^1 * operator_char^0)) - (P':-' + P'.')) *
+      V'ws';
+   relaxed_atom = V'atom_word' + V'relaxed_atom_operator' + V'quoted_atom';
+   relaxed_constant = V'relaxed_atom' + V'number' + V'string';
+
    command = V'ws' *
-      node("command", R'az' * word_char^0 * P('!')) *
+      node("command", word_start_char * word_char^0 * P('!')) *
       V'ws';
    sensing_action = V'ws' *
-      node("sensing_action", R'az' * word_char^0 * P('?')) *
+      node("sensing_action", word_start_char * word_char^0 * P('?')) *
       V'ws';
 
    named_variable = V'ws' *
-      node("variable", R'AZ' * word_char^0 + P'_' * word_char^1) *
+      node("variable", 
+	   R'AZ' * word_char^0 + P'_' * word_char^0 * word_start_char * word_char^0) *
       V'ws';
    anonymous_variable = V'ws' *
       node("anonymous_variable", P'_') *
       V'ws';
    variable = V'named_variable' + V'anonymous_variable';
 
+   -- Should we allow relaxed atoms as functors?
    functor = V'atom' + V'command' + V'sensing_action';
 }
 
@@ -143,31 +179,11 @@ local term_table = {
       V'ws';
 
    simple_term = V'constant' + V'variable';
+   relaxed_simple_term = V'relaxed_constant' + V'variable';
 
    term_list = V'ws' *
       V'term' * (V'ws' * P',' * V'ws' * V'term')^0 *
       V'ws';
-   strict_term_list = V'ws' *
-      V'strict_term' * (V'ws' * P',' * V'ws' * V'strict_term')^0 *
-      V'ws';
-
-   non_binop = V'ws' * (P'.' + P':-') * V'ws';
-   binop = V'ws' * 
-      (((V'operator_char' + V'special_char')^1 - V'non_binop') + K'and' + K'or') *
-      V'ws';
-   binop_term_rest = V'ws' *
-      (node("binop", V'binop') * V'ws' * V'start_term' *V'ws') *
-      V'ws';
-   binop_term_list = V'binop_term_rest'^1 * -V'binop_term_rest';
-
-   strict_non_binop = V'ws' * (P'.' + P':-' + P'|' + P',') * V'ws';
-   strict_binop = V'ws' * 
-      (((V'operator_char' + V'special_char')^1 - V'strict_non_binop') + K'and' + K'or') *
-      V'ws';
-   strict_binop_term_rest = V'ws' *
-      (node("binop", V'strict_binop') * V'ws' * V'start_term' *V'ws') *
-      V'ws';
-   strict_binop_term_list = V'strict_binop_term_rest'^1 * -V'strict_binop_term_rest';
 
    compound_term = node("compound_term",
 			V'functor' * P'(' * V'ws' *
@@ -175,43 +191,43 @@ local term_table = {
 			   V'ws' * P')',
 		       make_compound_term_node) *
                    V'ws';
-   compound_term_list = V'compound_term' *
-      (V'ws' * node("binop", V'binop') * V'ws' * V'compound_term')^0 *
-      V'ws';
 
    improper_list_term = V'ws' * P'[' * 
       node("improper_list", 
-	   V'strict_term_list'^-1 * 
+	   V'term_list'^-1 * 
 	      V'ws' * P'|' * V'ws' * V'term',
 	   make_improper_list_node) *
 	      V'ws' * P']' * V'ws';
    proper_list_term = V'ws' * P'[' * 
-      node("list", V'strict_term_list'^-1, make_sequence_node) *
+      node("list", V'term_list'^-1, make_sequence_node) *
       P']'* V'ws';
    list_term = V'improper_list_term' + V'proper_list_term';
+
    paren_term = V'ws' * P'(' * V'ws' *
-      node("paren_term", V'term', make_simple_node) *
+      node("paren_term", V'relaxed_term', make_modified_term_node) *
       P')' * V'ws';
 
-   start_term = V'compound_term' + V'list_term' + V'paren_term' + V'simple_term';
-   term = node("binop_sequence",
-	       V'start_term' * V'binop_term_list',
+   complex_term = V'compound_term' + V'list_term' + V'paren_term';
+   single_term = V'complex_term' + V'simple_term';
+   term = node("sequence_term",
+	       V'single_term'^2,
 	       make_sequence_node) +
-      V'start_term';
-   strict_term = node("binop_sequence", 
-		      V'start_term' * V'strict_binop_term_list',
-		      make_sequence_node) +
-      V'start_term';
+           V'single_term';
+
+   relaxed_single_term = V'complex_term' + V'relaxed_simple_term';
+   relaxed_term = node("sequence_term",
+		       V'relaxed_single_term'^2,
+		       make_sequence_node) +
+          V'relaxed_single_term';
 }
 
 local program_table = {
-
    fact = node("fact", 
 	       V'compound_term' *  P'.', 
 	       make_fact_node)
       * V'ws';
    rule = node("rule", 
-	       V'compound_term' * P':-' * V'compound_term_list' * P'.', 
+	       V'compound_term' * P':-' * V'relaxed_term' * P'.', 
 	       make_rule_node) *
                V'ws';
    clause = V'rule' + V'fact';
