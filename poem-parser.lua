@@ -12,15 +12,6 @@ local C, Cb, Cc, Cg, Cs, Ct =
 
 local poem_parser = {}
 
-local function node (id, pattern, fun)
-   if fun then
-      return Ct(Cc(id) * C(pattern)) / fun
-   else
-      return Ct(Cc(id) * C(pattern))
-   end
-end
-poem_parser.node = node
-
 local digit = R'09'
 local special_char = S'_+-%*/$&@#^<>=|'
 local operator_char = special_char + S'!?,;.:'
@@ -35,26 +26,59 @@ local function remove_full_match (t)
    return t
 end
 
-local function make_compound_term (t)
+local function make_simple_node (t)
+   local result = {}
+   result.type = t[1]
+   result.value = t[2]
+   return result
+end
+
+local function make_sequence_node (t)
+   local result = {}
+   result.type = t[1]
+   result.elements = table.slice(t, 3)
+   return result
+end
+
+local function make_compound_term_node (t)
    local result = { type = "compound_term" }
    result.functor = t[3]
    result.arguments = table.slice(t, 4)
    return result
 end
 
-local function make_proper_list_term (t)
-   local result = { type = "list" }
-   result.elements = table.slice(t, 3)
-   return result
-end
-
-local function make_improper_list_term (t)
+local function make_improper_list_node (t)
    local result = { type = "improper_list" }
    local n = #t
    result.elements = table.slice(t, 3, n-1)
    result.tail = t[n]
    return result
 end
+
+local function make_fact_node (t)
+   local result = {}
+   result.type = t[1]
+   result.fact = t[3]
+   return result
+end
+
+local function make_rule_node (t)
+   local result = {}
+   result.type = t[1]
+   result.conclusion = t[3]
+   result.premises = table.slice(t, 4)
+   return result
+end
+
+
+local function node (id, pattern, fun)
+   if fun then
+      return Ct(Cc(id) * C(pattern)) / fun
+   else
+      return Ct(Cc(id) * C(pattern)) / make_simple_node
+   end
+end
+poem_parser.node = node
 
 local lexer_table = {
    digit = digit;
@@ -149,30 +173,34 @@ local term_table = {
 			V'functor' * P'(' * V'ws' *
 			   V'term_list'^-1 *
 			   V'ws' * P')',
-		       make_compound_term) *
+		       make_compound_term_node) *
                    V'ws';
    compound_term_list = V'compound_term' *
       (V'ws' * node("binop", V'binop') * V'ws' * V'compound_term')^0 *
       V'ws';
 
    improper_list_term = V'ws' * P'[' * 
-      node("improper_list_term", 
+      node("improper_list", 
 	   V'strict_term_list'^-1 * 
 	      V'ws' * P'|' * V'ws' * V'term',
-	   make_improper_list_term) *
+	   make_improper_list_node) *
 	      V'ws' * P']' * V'ws';
    proper_list_term = V'ws' * P'[' * 
-      node("proper_list_term", V'strict_term_list'^-1, make_proper_list_term) *
+      node("list", V'strict_term_list'^-1, make_sequence_node) *
       P']'* V'ws';
    list_term = V'improper_list_term' + V'proper_list_term';
    paren_term = V'ws' * P'(' * V'ws' *
-      node("paren_term", V'term', remove_full_match) *
+      node("paren_term", V'term', make_simple_node) *
       P')' * V'ws';
 
    start_term = V'compound_term' + V'list_term' + V'paren_term' + V'simple_term';
-   term = node("binop_sequence", V'start_term' * V'binop_term_list', remove_full_match) +
+   term = node("binop_sequence",
+	       V'start_term' * V'binop_term_list',
+	       make_sequence_node) +
       V'start_term';
-   strict_term = node("binop_sequence", V'start_term' * V'strict_binop_term_list', remove_full_match) +
+   strict_term = node("binop_sequence", 
+		      V'start_term' * V'strict_binop_term_list',
+		      make_sequence_node) +
       V'start_term';
 }
 
@@ -180,15 +208,15 @@ local program_table = {
 
    fact = node("fact", 
 	       V'compound_term' *  P'.', 
-	       function (t) table.remove(t, 2); return t end)
+	       make_fact_node)
       * V'ws';
    rule = node("rule", 
 	       V'compound_term' * P':-' * V'compound_term_list' * P'.', 
-	       remove_full_match) *
+	       make_rule_node) *
                V'ws';
    clause = V'rule' + V'fact';
    
-   program = node("program", (V'clause')^1, remove_full_match);
+   program = node("program", (V'clause')^1, make_sequence_node);
 }
 
 local parser_table = table.merge(lexer_table,
@@ -196,28 +224,6 @@ local parser_table = table.merge(lexer_table,
 				 program_table,
 				 {V'program'})
 poem_parser.parser_table = parser_table
-
-local function simplify_parse_tree(tab) 
-   if type(tab) ~= "table" or not next(tab) then
-      return tab
-   else
-      local kind = tab[1]
-      -- print("kind = ", kind)
-      if kind == "compound_term" then
-	 table.remove(tab, 2)
-	 table.remove(tab, 3)
-      elseif  kind == "improper_list_term" or kind == "proper_list_term" then
-	 table.remove(tab, 2)
-      elseif kind == "paren_term" then
-	 table.remove(tab, 2)
-      end
-      for _,v in ipairs(tab) do
-	 simplify_parse_tree(v)
-      end
-   end
-   return tab
-end
-poem_parser.simplify_parse_tree = simplify_parse_tree
 
 local parser = P(parser_table)
 poem_parser.parser = parser

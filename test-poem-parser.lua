@@ -12,6 +12,20 @@ function print_parse_tree(parser, code)
    end
 end
 
+function test_everything()
+   test_atom_parser()
+   test_binop_parser()
+   test_strict_binop_parser()
+   test_binop_term_list_parser()
+   test_strict_binop_term_list_parser()
+   test_term_parser()
+   test_list_term_parser()
+   test_paren_term_parser()
+   test_binop_term_parser()
+   test_fact_parser()
+   test_clause_parser()
+end
+
 function test_atom_parser()
    local atom_parser_table = table.merge(pp.parser_table, { lpeg.V'atom' })
    -- table.print(atom_parser_table)
@@ -136,6 +150,16 @@ function test_binop_term_parser()
 end
 
 
+function test_fact_parser()
+   local term_parser_table = table.merge(pp.parser_table, { lpeg.V'fact' })
+   local parser = lpeg.P(term_parser_table)
+   print_parse_tree(parser, "foo(bar, 1, x, 'atom with space').")
+   print_parse_tree(parser, "'this is a constant'(applied, to, \"some terms\").")
+   print_parse_tree(parser, "f([a, list, 17]).")
+   print_parse_tree(parser, "g([ this ( is   (a, nested), term  ), inalist | withrestandwhitespace ]).")
+end
+
+
 function test_clause_parser()
    local parser = pp.parser
    print_parse_tree(parser, "foo(bar, 1, x, 'atom with space').")
@@ -143,6 +167,7 @@ function test_clause_parser()
    print_parse_tree(parser, "f([a, list, 17]).")
    print_parse_tree(parser, "g([ this ( is   (a, nested), term  ), inalist | withrestandwhitespace ]).")
    print_parse_tree(parser, "f(x,y) :- g(y, x), h(x, x); foo(bar), z(y).")
+
    print_parse_tree(parser, "f(x,y) :- g(y, x) and h(x, x) or foo(bar) and z(y).")
    print_parse_tree(parser, "f(x,y) :- g(y, x) & h(x, x) | foo(bar) &&&||||**** z(y).")
    print_parse_tree(parser, [[
