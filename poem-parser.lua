@@ -17,7 +17,7 @@ local special_char = S'_+-%*/$&@#^<>='
 local non_word_char = special_char + S'!?;:'
 local reserved_char = S'|,.'
 local word_start_char = R('az')
-local word_char = word_start_char + digit + special_char
+local word_char = word_start_char + R'AZ' + digit + special_char
 local operator_start_char = special_char + non_word_char
 local operator_char = operator_start_char + reserved_char
 
@@ -130,28 +130,20 @@ local lexer_table = {
       V'ws';
 
    atom_word = V'ws' *
-      node("word", (word_start_char * word_char^0) - V'keywords') *
+      node("atom", (word_start_char * word_char^0) - V'keywords') *
       V'ws';
    atom_operator = V'ws' *
-      node("operator",
+      node("atom",
 	   ((operator_start_char^1 * operator_char^0) + 
-	    (reserved_char^1 * operator_char^1))) *
+	    (reserved_char^1 * operator_char^0))) *
       V'ws';
    quoted_atom = V'ws' *
-      node("quoted_atom", 
+      node("atom", 
 	   P'\'' * (P'\\' * P(1) + (1 - P'\''))^0 * P'\'',
 	  make_quoted_atom_node) *
       V'ws';
    atom = V'atom_word' + V'atom_operator' + V'quoted_atom';
-   constant = V'atom' + V'number' + V'string';
-
-   relaxed_atom_operator = V'ws' *
-      node("operator",
-	   ((operator_start_char^1 * operator_char^0) + 
-	    (reserved_char^1 * operator_char^0))) *
-      V'ws';
-   relaxed_atom = V'atom_word' + V'relaxed_atom_operator' + V'quoted_atom';
-   relaxed_constant = V'relaxed_atom' + V'number' + V'string';
+   constant = V'number' + V'atom' + V'string';
 
    command = V'ws' *
       node("command", word_start_char * word_char^0 * P('!')) *
@@ -162,15 +154,15 @@ local lexer_table = {
 
    named_variable = V'ws' *
       node("variable", 
-	   R'AZ' * word_char^0 + P'_' * word_char^0 * word_start_char * word_char^0) *
+	   R'AZ' * V'word_char'^0 + 
+	      P'_' * R('az', 'AZ', '09')^1 * V'word_char'^0) *
       V'ws';
    anonymous_variable = V'ws' *
       node("anonymous_variable", P'_') *
       V'ws';
    variable = V'named_variable' + V'anonymous_variable';
 
-   -- Should we allow relaxed atoms as functors?
-   functor = V'atom' + V'command' + V'sensing_action';
+   functor = V'command' + V'sensing_action' + V'atom';
 }
 
 local term_table = {
@@ -178,19 +170,21 @@ local term_table = {
       V'variable' * (V'ws' * P',' * V'ws' * V'variable')^0 *
       V'ws';
 
-   simple_term = V'constant' + V'variable';
-   relaxed_simple_term = V'relaxed_constant' + V'variable';
+   simple_term =  V'variable' + V'constant';
 
    term_list = V'ws' *
       V'term' * (V'ws' * P',' * V'ws' * V'term')^0 *
       V'ws';
    term_list_no_vbar = V'ws' *
-      (V'term' - P'|') * (V'ws' * P',' * V'ws' * (V'term' - P'|'))^0 *
+      V'term_no_vbar' * (V'ws' * P',' * V'ws' * V'term_no_vbar')^0 *
+      V'ws';
+   term_list_no_comma = V'ws' *
+      V'term_no_comma' * (V'ws' * P',' * V'ws' * V'term_no_comma')^0 *
       V'ws';
 
    compound_term = node("compound_term",
 			V'functor' * P'(' * V'ws' *
-			   V'term_list'^-1 *
+			   V'term_list_no_comma'^-1 *
 			   V'ws' * P')',
 		       make_compound_term_node) *
                    V'ws';
@@ -207,25 +201,27 @@ local term_table = {
    list_term = V'improper_list_term' + V'proper_list_term';
 
    paren_term = V'ws' * P'(' * V'ws' *
-      node("paren_term", V'relaxed_term', make_modified_term_node) *
+      node("paren_term", V'term', make_modified_term_node) *
       P')' * V'ws';
 
    complex_term = V'compound_term' + V'list_term' + V'paren_term';
-   single_term = V'complex_term' + V'simple_term';
+   single_term =  V'complex_term' + V'simple_term';
    term = node("sequence_term",
 	       V'single_term'^2,
 	       make_sequence_node) +
            V'single_term';
-
-   relaxed_single_term = V'complex_term' + V'relaxed_simple_term';
-   relaxed_term = node("sequence_term",
-		       V'relaxed_single_term'^2,
+   term_no_comma = node("sequence_term",
+			(V'single_term' - P',')^2,
+			make_sequence_node) +
+                   (V'single_term' - P',');
+   term_no_vbar = node("sequence_term",
+		       (V'single_term' - (P'|' + P','))^2,
 		       make_sequence_node) +
-                  V'relaxed_single_term';
-   relaxed_term_no_dot = node("sequence_term",
-			      (V'relaxed_single_term' - P'.')^2,
-			      make_sequence_node) +
-                         (V'relaxed_single_term' - P'.');
+                  (V'single_term' - (P'|' + P','));
+   term_no_dot = node("sequence_term",
+		      (V'single_term' - P'.')^2,
+		      make_sequence_node) +
+                 (V'single_term' - P'.');
 }
 
 local program_table = {
@@ -234,7 +230,7 @@ local program_table = {
 	       make_fact_node)
       * V'ws';
    rule = node("rule", 
-	       V'compound_term' * P':-' * V'relaxed_term_no_dot' * P'.', 
+	       V'compound_term' * P':-' * V'term_no_dot' * P'.', 
 	       make_rule_node) *
                V'ws';
    clause = V'rule' + V'fact';
@@ -250,5 +246,92 @@ poem_parser.parser_table = parser_table
 
 local parser = P(parser_table)
 poem_parser.parser = parser
+
+-- These tables are taken from the SWI-Prolog web site.
+-- Need to check with the standard that they are correct.
+local prefix_operators = {
+   [":-"]             = { precedence = 1200, associativity = "fx" },
+   ["?-"]             = { precedence = 1200, associativity = "fx" },
+   dynamic            = { precedence = 1150, associativity = "fx" },
+   multifile          = { precedence = 1150, associativity = "fx" },
+   module_transparent = { precedence = 1150, associativity = "fx" },
+   discontiguous      = { precedence = 1150, associativity = "fx" },
+   volatile           = { precedence = 1150, associativity = "fx" },
+   initialization     = { precedence = 1150, associativity = "fx" },
+   ["\\+"]            = { precedence =  900, associativity = "fx" },
+   ["~"]              = { precedence =  900, associativity = "fx" },
+   ["+"]              = { precedence =  500, associativity = "fx" },
+   ["-"]              = { precedence =  500, associativity = "fx" },
+   ["?"]              = { precedence =  500, associativity = "fx" },
+   ["\\"]             = { precedence =  500, associativity = "fx" },
+}
+
+local infix_operators = {
+   ["-->"]   = { precedence = 1200, associativity = "xfx" },
+   [":-"]    = { precedence = 1200, associativity = "xfx" },
+   [";"]     = { precedence = 1100, associativity = "xfy" },
+   ["->"]    = { precedence = 1050, associativity = "xfy" },
+   [","]     = { precedence = 1000, associativity = "xfy" },
+   ["\\"]    = { precedence =  954, associativity = "xfy" },
+   ["<"]     = { precedence =  700, associativity = "xfx" },
+   ["="]     = { precedence =  700, associativity = "xfx" },
+   ["=.."]   = { precedence =  700, associativity = "xfx" },
+   ["=@="]   = { precedence =  700, associativity = "xfx" },
+   ["=:="]   = { precedence =  700, associativity = "xfx" },
+   ["=<"]    = { precedence =  700, associativity = "xfx" },
+   ["=="]    = { precedence =  700, associativity = "xfx" },
+   ["=\\="]  = { precedence =  700, associativity = "xfx" },
+   [">"]     = { precedence =  700, associativity = "xfx" },
+   [">="]    = { precedence =  700, associativity = "xfx" },
+   ["@<"]    = { precedence =  700, associativity = "xfx" },
+   ["@=<"]   = { precedence =  700, associativity = "xfx" },
+   ["@>"]    = { precedence =  700, associativity = "xfx" },
+   ["@>="]   = { precedence =  700, associativity = "xfx" },
+   ["\\="]   = { precedence =  700, associativity = "xfx" },
+   ["\\=="]  = { precedence =  700, associativity = "xfx" },
+   ["is"]    = { precedence =  700, associativity = "xfx" },
+   [":"]     = { precedence =  600, associativity = "xfy" },
+   ["+"]     = { precedence =  500, associativity = "yfx" },
+   ["-"]     = { precedence =  500, associativity = "yfx" },
+   ["/\\"]   = { precedence =  500, associativity = "yfx" },
+   ["\\/"]   = { precedence =  500, associativity = "yfx" },
+   ["xor"]   = { precedence =  500, associativity = "yfx" },
+   ["*"]     = { precedence =  400, associativity = "yfx" },
+   ["/"]     = { precedence =  400, associativity = "yfx" },
+   ["//"]    = { precedence =  400, associativity = "yfx" },
+   ["<<"]    = { precedence =  400, associativity = "yfx" },
+   [">>"]    = { precedence =  400, associativity = "yfx" },
+   ["mod"]   = { precedence =  400, associativity = "yfx" },
+   ["rem"]   = { precedence =  400, associativity = "yfx" },
+   ["**"]    = { precedence =  200, associativity = "xfx" },
+   ["^"]     = { precedence =  200, associativity = "xfy" },
+}
+
+local function build_syntax_tree (pt, operators)
+   -- pt is the parse_tree
+   local node_type = pt.type
+   if node_type == "number" then
+      return { type = "number",
+	       value = tonumber(pt.value) }
+   elseif node_type == "string" or node_type == "atom"
+      or node_type == "command" or node_type == "sensing_action" then
+      return pt
+   elseif node_type == "variable" then
+      return { type = "variable", name = pt.value }
+   elseif node_type == "anonymous_variable" then
+      return { type = "anonymous_variable" }
+   elseif node_type == "compound_term" then
+      local function bst (node)
+	 return build_syntax_tree(node, operators)
+      end
+      return { type = "compound_term",
+	       functor = pt.functor,
+	       arguments = map(bst, pt.arguments) }
+   end
+   print("Failed to match node type " .. node_type)
+   table.print(pt)
+   error("Aborting.")
+end
+poem_parser.build_syntax_tree = build_syntax_tree
 
 package.loaded['poem-parser'] = poem_parser

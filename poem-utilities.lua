@@ -30,7 +30,9 @@ function table.print(tab)
    if (type(tab) == 'table') then
       for k,v in pairs(tab) do
 	 io.write(k, '\t -> ')
-	 table.print_rec(v)
+	 table.print_rec(v, true)
+	 -- io.write('\ttype: ', type(v))
+	 print()
       end
    else
       print(tab)
@@ -91,6 +93,14 @@ function table.slice (tab, start_index, end_index)
    for i = start_index, end_index do
       result[k] = tab[i]
       k = k + 1
+   end
+   return result
+end
+
+function map (f, tab) 
+   local result = {}
+   for k, v in pairs(tab) do
+      result[k] = f(v)
    end
    return result
 end

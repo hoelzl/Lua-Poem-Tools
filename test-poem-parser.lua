@@ -12,18 +12,33 @@ function print_parse_tree(parser, code)
    end
 end
 
+function print_syntax_tree(parser, operators, code)
+   local parse_tree = parser:match(code);
+   if parse_tree then
+      local syntax_tree = pp.build_syntax_tree(parse_tree, operators)
+      if syntax_tree then
+	 print("Input: ", code)
+	 table.print(syntax_tree)
+	 print()
+      else
+	 error("Could not obtain parse tree for " .. code)
+      end
+   else
+      error("Could not parse input " .. code)
+   end
+end
+
 function test_everything()
    test_atom_parser()
    test_operator_parser()
-   test_relaxed_operator_parser()
    test_term_list_parser()
-   test_relaxed_term_parser()
    test_term_parser()
    test_list_term_parser()
    test_paren_term_parser()
    test_operator_term_parser()
    test_fact_parser()
    test_clause_parser()
+   test_term_syntax()
 end
 
 function test_atom_parser()
@@ -31,23 +46,10 @@ function test_atom_parser()
    -- table.print(atom_parser_table)
    local atom_parser = lpeg.P(atom_parser_table)
    print_parse_tree(atom_parser, "foo")
+   print_parse_tree(atom_parser, "fooBarBaz")
    print_parse_tree(atom_parser, "&*%$")
    print_parse_tree(atom_parser, "'foo Bar Baz'")
 end
-
-function test_relaxed_operator_parser()
-   local operator_parser_table = table.merge(pp.parser_table, { 
-					     pp.node("operator", lpeg.V'relaxed_atom_operator') })
-   -- table.print(operator_parser_table)
-   local operator_parser = lpeg.P(operator_parser_table)
-   print_parse_tree(operator_parser, "=")
-   print_parse_tree(operator_parser, "@#$%")
-   print_parse_tree(operator_parser, ",")
-   print_parse_tree(operator_parser, "|")
-   print_parse_tree(operator_parser, ":-")
-   print_parse_tree(operator_parser, ".")
-end
-
 
 function test_operator_parser()
    local operator_parser_table = table.merge(pp.parser_table, { 
@@ -57,13 +59,10 @@ function test_operator_parser()
    print_parse_tree(operator_parser, "=")
    print_parse_tree(operator_parser, "@#$%")
    print_parse_tree(operator_parser, "%")
-   -- The following four tests should fail
-   --[[
    print_parse_tree(operator_parser, ",")
    print_parse_tree(operator_parser, "|")
    print_parse_tree(operator_parser, ":-")
    print_parse_tree(operator_parser, ".")
-   ]]--
 end
 
 function test_term_list_parser()
@@ -176,4 +175,29 @@ function test_clause_parser()
      f(X,Y) :- g(X, X), h(X, Y), bar(foo).
      g(X,Y) :- asdf(X, Y).
    ]])
+end
+
+function test_term_syntax()
+   local parser_table = table.merge(pp.parser_table, { lpeg.V'term' })
+   local parser = lpeg.P(parser_table)
+   print_syntax_tree(parser, {}, "foo")
+   print_syntax_tree(parser, {}, "fooBarBaz")
+   print_syntax_tree(parser, {}, "%")
+   print_syntax_tree(parser, {}, "''")
+   print_syntax_tree(parser, {}, "'quoted atom'")
+   print_syntax_tree(parser, {}, "123")
+   print_syntax_tree(parser, {}, "123.456")
+   print_syntax_tree(parser, {}, "-123.456")
+   print_syntax_tree(parser, {}, "\"\"")
+   print_syntax_tree(parser, {}, "\"This is a string!\"")
+   -- Commands and sensing actions are currently not terms...
+   -- print_syntax_tree(parser, {}, "foo!")
+   -- print_syntax_tree(parser, {}, "foo?")
+   print_syntax_tree(parser, {}, "Foo")
+   print_syntax_tree(parser, {}, "FOO")
+   print_syntax_tree(parser, {}, "_foo")
+   print_syntax_tree(parser, {}, "_")
+   print_syntax_tree(parser, {}, "foo()")
+   print_syntax_tree(parser, {}, "foo(123, X, _y, _, z)")
+   print_syntax_tree(parser, {}, "foo(g(X, h(y)))")
 end
