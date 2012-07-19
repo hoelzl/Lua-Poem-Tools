@@ -70,3 +70,27 @@ function table.equal (t1, t2)
    end
    return true
 end
+
+function table.slice (tab, start_index, end_index)
+   local result = {}
+   local n = #tab
+   start_index = start_index or 1
+   end_index = end_index or n
+
+   if end_index < 0 then
+      end_index = n + end_index + 1
+   elseif end_index > n then
+      end_index = n
+   end
+
+   -- FIXME: should deal with negative start indices
+   if start_index < 1 or start_index > n then
+      return {}
+   end
+   local k = 1
+   for i = start_index, end_index do
+      result[k] = tab[i]
+      k = k + 1
+   end
+   return result
+end

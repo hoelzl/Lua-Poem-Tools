@@ -10,9 +10,16 @@ local P, R, S, V =
 local C, Cb, Cc, Cg, Cs, Ct =
    lpeg.C, lpeg.Cb, lpeg.Cc, lpeg.Cg, lpeg.Cs, lpeg.Ct
 
-local function node (id, pattern)
-   return Ct(Cc(id) * C(pattern))
+local poem_parser = {}
+
+local function node (id, pattern, fun)
+   if fun then
+      return Ct(Cc(id) * C(pattern)) / fun
+   else
+      return Ct(Cc(id) * C(pattern))
+   end
 end
+poem_parser.node = node
 
 local digit = R'09'
 local special_char = S'_+-%*/$&@#^<>=|'
@@ -23,7 +30,31 @@ local function K (k)
   return P(k) * -word_char;
 end
 
-local poem_parser = {}
+local function remove_full_match (t) 
+   table.remove(t, 2)
+   return t
+end
+
+local function make_compound_term (t)
+   local result = { type = "compound_term" }
+   result.functor = t[3]
+   result.arguments = table.slice(t, 4)
+   return result
+end
+
+local function make_proper_list_term (t)
+   local result = { type = "list" }
+   result.elements = table.slice(t, 3)
+   return result
+end
+
+local function make_improper_list_term (t)
+   local result = { type = "improper_list" }
+   local n = #t
+   result.elements = table.slice(t, 3, n-1)
+   result.tail = t[n]
+   return result
+end
 
 local lexer_table = {
    digit = digit;
@@ -92,49 +123,72 @@ local term_table = {
    term_list = V'ws' *
       V'term' * (V'ws' * P',' * V'ws' * V'term')^0 *
       V'ws';
+   strict_term_list = V'ws' *
+      V'strict_term' * (V'ws' * P',' * V'ws' * V'strict_term')^0 *
+      V'ws';
 
-   non_binop = P'.' + P':-';
+   non_binop = V'ws' * (P'.' + P':-') * V'ws';
    binop = V'ws' * 
       (((V'operator_char' + V'special_char')^1 - V'non_binop') + K'and' + K'or') *
       V'ws';
-
    binop_term_rest = V'ws' *
       (node("binop", V'binop') * V'ws' * V'start_term' *V'ws') *
       V'ws';
    binop_term_list = V'binop_term_rest'^1 * -V'binop_term_rest';
+
+   strict_non_binop = V'ws' * (P'.' + P':-' + P'|' + P',') * V'ws';
+   strict_binop = V'ws' * 
+      (((V'operator_char' + V'special_char')^1 - V'strict_non_binop') + K'and' + K'or') *
+      V'ws';
+   strict_binop_term_rest = V'ws' *
+      (node("binop", V'strict_binop') * V'ws' * V'start_term' *V'ws') *
+      V'ws';
+   strict_binop_term_list = V'strict_binop_term_rest'^1 * -V'strict_binop_term_rest';
+
    compound_term = node("compound_term",
 			V'functor' * P'(' * V'ws' *
-			   C(V'term_list'^0) * V'ws' * P')') * 
+			   V'term_list'^-1 *
+			   V'ws' * P')',
+		       make_compound_term) *
                    V'ws';
-   improper_list_term = V'ws' * P'[' * 
-      node("improper_list_term", 
-	   V'term_list'^-1 * 
-	      Ct(Cc'tail' * (V'ws' * P'|' * V'variable'))) *
-	      V'ws' * P']' * V'ws';
-   proper_list_term = V'ws' * P'[' * 
-      node("proper_list_term", V'term_list'^-1) *
-      P']'* V'ws';
-   list_term = V'improper_list_term' + V'proper_list_term';
-   paren_term = V'ws' * P'(' * V'ws' *
-      node("paren_term", V'term') *
-      P')' * V'ws';
-
-   start_term = V'compound_term' + V'list_term' + V'paren_term' + V'simple_term';
-   term = node("binop_sequence", V'start_term' * V'binop_term_list') + V'start_term';
-}
-
-local program_table = {
    compound_term_list = V'compound_term' *
       (V'ws' * node("binop", V'binop') * V'ws' * V'compound_term')^0 *
       V'ws';
 
-   fact = node("fact", V'compound_term' *  P'.') * V'ws';
+   improper_list_term = V'ws' * P'[' * 
+      node("improper_list_term", 
+	   V'strict_term_list'^-1 * 
+	      V'ws' * P'|' * V'ws' * V'term',
+	   make_improper_list_term) *
+	      V'ws' * P']' * V'ws';
+   proper_list_term = V'ws' * P'[' * 
+      node("proper_list_term", V'strict_term_list'^-1, make_proper_list_term) *
+      P']'* V'ws';
+   list_term = V'improper_list_term' + V'proper_list_term';
+   paren_term = V'ws' * P'(' * V'ws' *
+      node("paren_term", V'term', remove_full_match) *
+      P')' * V'ws';
+
+   start_term = V'compound_term' + V'list_term' + V'paren_term' + V'simple_term';
+   term = node("binop_sequence", V'start_term' * V'binop_term_list', remove_full_match) +
+      V'start_term';
+   strict_term = node("binop_sequence", V'start_term' * V'strict_binop_term_list', remove_full_match) +
+      V'start_term';
+}
+
+local program_table = {
+
+   fact = node("fact", 
+	       V'compound_term' *  P'.', 
+	       function (t) table.remove(t, 2); return t end)
+      * V'ws';
    rule = node("rule", 
-	       V'compound_term' * P':-' * V'compound_term_list' * P'.') *
+	       V'compound_term' * P':-' * V'compound_term_list' * P'.', 
+	       remove_full_match) *
                V'ws';
    clause = V'rule' + V'fact';
    
-   program = node("program", (V'clause')^1);
+   program = node("program", (V'clause')^1, remove_full_match);
 }
 
 local parser_table = table.merge(lexer_table,
@@ -155,8 +209,6 @@ local function simplify_parse_tree(tab)
       elseif  kind == "improper_list_term" or kind == "proper_list_term" then
 	 table.remove(tab, 2)
       elseif kind == "paren_term" then
-	 table.remove(tab, 2)
-      elseif  kind == "fact" or kind == "rule" then
 	 table.remove(tab, 2)
       end
       for _,v in ipairs(tab) do
