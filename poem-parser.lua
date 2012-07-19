@@ -135,7 +135,7 @@ local lexer_table = {
    atom_operator = V'ws' *
       node("operator",
 	   ((operator_start_char^1 * operator_char^0) + 
-	    (reserved_char^1 * operator_char^1)) - P':-') *
+	    (reserved_char^1 * operator_char^1))) *
       V'ws';
    quoted_atom = V'ws' *
       node("quoted_atom", 
@@ -148,7 +148,7 @@ local lexer_table = {
    relaxed_atom_operator = V'ws' *
       node("operator",
 	   ((operator_start_char^1 * operator_char^0) + 
-	    (reserved_char^1 * operator_char^0)) - (P':-' + P'.')) *
+	    (reserved_char^1 * operator_char^0))) *
       V'ws';
    relaxed_atom = V'atom_word' + V'relaxed_atom_operator' + V'quoted_atom';
    relaxed_constant = V'relaxed_atom' + V'number' + V'string';
@@ -184,6 +184,9 @@ local term_table = {
    term_list = V'ws' *
       V'term' * (V'ws' * P',' * V'ws' * V'term')^0 *
       V'ws';
+   term_list_no_vbar = V'ws' *
+      (V'term' - P'|') * (V'ws' * P',' * V'ws' * (V'term' - P'|'))^0 *
+      V'ws';
 
    compound_term = node("compound_term",
 			V'functor' * P'(' * V'ws' *
@@ -194,7 +197,7 @@ local term_table = {
 
    improper_list_term = V'ws' * P'[' * 
       node("improper_list", 
-	   V'term_list'^-1 * 
+	   V'term_list_no_vbar'^-1 * 
 	      V'ws' * P'|' * V'ws' * V'term',
 	   make_improper_list_node) *
 	      V'ws' * P']' * V'ws';
@@ -218,7 +221,11 @@ local term_table = {
    relaxed_term = node("sequence_term",
 		       V'relaxed_single_term'^2,
 		       make_sequence_node) +
-          V'relaxed_single_term';
+                  V'relaxed_single_term';
+   relaxed_term_no_dot = node("sequence_term",
+			      (V'relaxed_single_term' - P'.')^2,
+			      make_sequence_node) +
+                         (V'relaxed_single_term' - P'.');
 }
 
 local program_table = {
@@ -227,7 +234,7 @@ local program_table = {
 	       make_fact_node)
       * V'ws';
    rule = node("rule", 
-	       V'compound_term' * P':-' * V'relaxed_term' * P'.', 
+	       V'compound_term' * P':-' * V'relaxed_term_no_dot' * P'.', 
 	       make_rule_node) *
                V'ws';
    clause = V'rule' + V'fact';

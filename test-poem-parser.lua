@@ -44,11 +44,8 @@ function test_relaxed_operator_parser()
    print_parse_tree(operator_parser, "@#$%")
    print_parse_tree(operator_parser, ",")
    print_parse_tree(operator_parser, "|")
-   -- The following two tests should fail
-   --[[
    print_parse_tree(operator_parser, ":-")
    print_parse_tree(operator_parser, ".")
-   ]]--
 end
 
 
