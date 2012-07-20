@@ -28,22 +28,44 @@ end
 unification.make_variable = make_variable
 
 local function is_variable (x)
-   return x and x.type == 'variable'
+   return x and type(x) == 'table' and x.type == 'variable'
 end
 unification.is_variable = is_variable
 
 local function is_bound (x)
-   return x and x.binding ~= unbound
+   return x.binding ~= unbound
 end
 unification.is_bound = is_bound
 
 local function deref (x)
-   while is_variable(x) and is_bound(x) do
-      x = x.binding
+   -- Shorten variable-variable bindings
+   local result = x
+   while is_variable(result) and is_bound(result) do
+      result = result.binding
+      x.binding = result
    end
-   return x
+   return result
 end
 unification.deref = deref
+
+local function set_binding (var, value)
+   if var ~= value then
+      trail[#trail + 1] = var
+      var.binding = value
+   end
+end
+unification.set_binding = set_binding
+
+local function undo_bindings (level)
+   local trail_level = #trail
+   while trail_level > level do
+      local var = trail[trail_level]
+      var.binding = unbound
+      trail[trail_level] = nil
+      trail_level = trail_level - 1
+   end
+end
+unification.undo_bindings = undo_bindings
 
 local function unify (x, y)
    x = deref(x)
@@ -51,9 +73,11 @@ local function unify (x, y)
    if x == y then
       return true
    elseif is_variable(x) then
-      x.binding = y
+      set_binding(x, y)
+      return true
    elseif is_variable(y) then
-      y.binding = x
+      set_binding(y, x)
+      return true
    elseif type(x) == 'table' and type(y) == 'table' then
       for k, v in pairs(x) do
 	 if not unify(v, y[k]) then
@@ -65,6 +89,7 @@ local function unify (x, y)
 	    return false
 	 end
       end
+      return true
    else
       return false
    end
