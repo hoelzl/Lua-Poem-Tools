@@ -196,7 +196,7 @@ local term_table = {
 	   make_improper_list_node) *
 	      V'ws' * P']' * V'ws';
    proper_list_term = V'ws' * P'[' * 
-      node("list", V'term_list'^-1, make_sequence_node) *
+      node("list", V'term_list_no_vbar'^-1, make_sequence_node) *
       P']'* V'ws';
    list_term = V'improper_list_term' + V'proper_list_term';
 
@@ -249,7 +249,7 @@ poem_parser.parser = parser
 
 -- These tables are taken from the SWI-Prolog web site.
 -- Need to check with the standard that they are correct.
-local prefix_operators = {
+local unary_operators = {
    [":-"]             = { precedence = 1200, associativity = "fx" },
    ["?-"]             = { precedence = 1200, associativity = "fx" },
    dynamic            = { precedence = 1150, associativity = "fx" },
@@ -266,7 +266,7 @@ local prefix_operators = {
    ["\\"]             = { precedence =  500, associativity = "fx" },
 }
 
-local infix_operators = {
+local binary_operators = {
    ["-->"]   = { precedence = 1200, associativity = "xfx" },
    [":-"]    = { precedence = 1200, associativity = "xfx" },
    [";"]     = { precedence = 1100, associativity = "xfy" },
@@ -307,9 +307,140 @@ local infix_operators = {
    ["^"]     = { precedence =  200, associativity = "xfy" },
 }
 
-local function build_syntax_tree (pt, operators)
+local operators = { unops = unary_operators,
+		    binops = binary_operators }
+poem_parser.operators = operators
+
+local function is_unary_operator (op, unops)
+   unops = unops or unary_operators
+   return unops[op] and true
+end
+poem_parser.is_unary_operator = is_unary_operator
+
+local function unop_precedence (op, unops)
+   unops = unops or unary_operators
+   local opspec = unops[op]
+   if opspec then 
+      return opspec.precedence or 0
+   else
+      return 0
+   end
+end
+poem_parser.unop_precedence = unop_precedence
+
+local function is_binary_operator (op, binops)
+   binops = binops or binary_operators
+   return binops[op] and true
+end
+poem_parser.is_binary_operator = is_binary_operator
+
+local function binop_precedence (op, binops)
+   binops = binops or binary_operators
+   local opspec = binops[op]
+   local result = 0
+   if opspec then
+      -- print("binop_precedence: found op ", op)
+      result = opspec.precedence or 0
+   else
+      -- print("binop_precedence: didn't find op ", op)
+   end
+   -- print("binop_precedence: result = ", result)
+   return result
+end
+poem_parser.binop_precedence = binop_precedence
+
+local build_syntax_tree
+
+-- This function takes a list of operators and build a syntax tree
+-- according to the precedence and associativity specification.  The
+-- algorithm is essentially a Top-Down Operator-Precedence Parser, see
+-- the original paper by Vaughan Pratt or the Web site
+-- http://eli.thegreenplace.net/2010/01/02/top-down-operator-precedence-parsing/
+-- for a description.
+local function build_operator_tree (pts, operators)
+   -- pts are the parse trees in the sequence term
+   -- operators is the table of operators
+   
+   local unops, binops = operators.unops, operators.binops
+   local current_index = 1
+   local token = pts[current_index]
+
+   local lbp, expression
+
+   local function next ()
+      current_index = current_index + 1
+      local result = pts[current_index]
+      -- print("next: result")
+      -- table.print(result)
+      return result
+   end
+   
+   local function nud (t)
+      -- nud stands for "null denotation"
+      -- t is a token
+      local prec = 1500 - unop_precedence(t, unops)
+      local argument = expression(prec)
+      local result = { type = "unop",
+		       operator = t.value,
+		       argument = argument }
+      -- print("nud: result")
+      -- table.print(result)
+      return result
+   end
+
+   local function led (left, t)
+      -- led stands for "left denotation"
+      -- left is the left parse tree
+      -- t is a token
+      if t then
+	 local rhs = expression(lbp(t))
+	 local result = { type = "binop",
+			  operator = t.value,
+			  lhs = left,
+			  rhs = rhs }
+	 -- print("led: result")
+	 -- table.print(result)
+	 return result
+      else
+	 return left
+      end
+   end
+
+   function lbp (t)
+      -- lbp stands for "left binding power"
+      -- t is a token
+      return 1500 - binop_precedence(t.value, binops)
+   end
+
+   function expression (rbp)
+      -- rbp is the right binding power
+      -- print("expression: rbp = ", rbp)
+      local t = token
+      -- print("expression: token")
+      -- table.print(t)
+      token = next()
+      if (token) then
+	 -- print("expression: lbp(token) = ", lbp(token))
+      end
+      local left = build_syntax_tree(t, operators)
+      -- print("expression: built syntax tree")
+      while token and rbp < lbp(token) do
+	 t = token
+	 token = next()
+	 left = led(left, t)
+      end
+      return left
+   end
+
+   return expression(0)
+end
+
+function build_syntax_tree (pt, operators)
    -- pt is the parse_tree
    local node_type = pt.type
+   local function bst (node)
+      return build_syntax_tree(node, operators)
+   end
    if node_type == "number" then
       return { type = "number",
 	       value = tonumber(pt.value) }
@@ -321,12 +452,47 @@ local function build_syntax_tree (pt, operators)
    elseif node_type == "anonymous_variable" then
       return { type = "anonymous_variable" }
    elseif node_type == "compound_term" then
-      local function bst (node)
-	 return build_syntax_tree(node, operators)
-      end
       return { type = "compound_term",
 	       functor = pt.functor,
 	       arguments = map(bst, pt.arguments) }
+   -- We might expands list here, but maybe we can use list notation
+   -- in the sitcalc axioms, so it's probably safer to let them be for
+   -- the time being.
+   elseif node_type == "improper_list" then
+      return { type = "improper_list",
+	       elements = map(bst, pt.elements),
+	       tail = bst(pt.tail) }
+   elseif node_type == "list" then
+      return { type = "list",
+		elements = map(bst, pt.elements) }
+   elseif node_type == "paren_term" then
+      local value = pt.value
+      if not value then
+	 error("Parenthesized term without value.")
+      elseif not value.type then
+	 error("Parenthesized term without value type.")
+      else
+	 return bst(value)
+      end	  
+   elseif node_type == "sequence_term" then
+      return build_operator_tree(pt.elements, operators)
+   elseif node_type == "fact" then
+      local fact = pt.fact
+      if not fact then
+	 error("Empty fact?")
+      elseif not fact.type then
+	 error("Fact without type?")
+      else
+	 return { type = "fact",
+		  fact = bst(fact) }
+      end
+   elseif node_type == "rule" then
+      return { type = "rule",
+	       conclusion = bst(pt.conclusion),
+	       premises = map(bst, pt.premises) }
+   elseif node_type == "program" then
+      return { type = "program",
+	       elements = map(bst, pt.elements) }
    end
    print("Failed to match node type " .. node_type)
    table.print(pt)

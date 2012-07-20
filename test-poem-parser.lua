@@ -39,6 +39,9 @@ function test_everything()
    test_fact_parser()
    test_clause_parser()
    test_term_syntax()
+   test_parenthesized_term_syntax()
+   test_build_operator_tree()
+   test_program_syntax()
 end
 
 function test_atom_parser()
@@ -200,4 +203,57 @@ function test_term_syntax()
    print_syntax_tree(parser, {}, "foo()")
    print_syntax_tree(parser, {}, "foo(123, X, _y, _, z)")
    print_syntax_tree(parser, {}, "foo(g(X, h(y)))")
+   print_syntax_tree(parser, {}, "[]")
+   print_syntax_tree(parser, {}, "[Foo, 123]")
+   print_syntax_tree(parser, {}, "[Foo, 123 | bar(X, Foo)]")
+   print_syntax_tree(parser, {}, "[Foo, 123 | Bar]")
+end
+
+function test_parenthesized_term_syntax()
+   local parser_table = table.merge(pp.parser_table, { lpeg.V'term' })
+   local parser = lpeg.P(parser_table)
+   print_syntax_tree(parser, {}, "(foo)")
+   print_syntax_tree(parser, {}, "(fooBarBaz)")
+   print_syntax_tree(parser, {}, "(%)")
+   print_syntax_tree(parser, {}, "('')")
+   print_syntax_tree(parser, {}, "('quoted atom')")
+   print_syntax_tree(parser, {}, "(123)")
+   print_syntax_tree(parser, {}, "(123.456)")
+   print_syntax_tree(parser, {}, "(-123.456)")
+   print_syntax_tree(parser, {}, "(\"\")")
+   print_syntax_tree(parser, {}, "(\"This is a string!\")")
+   -- Commands and sensing actions are currently not terms...
+   -- print_syntax_tree(parser, {}, "foo!")
+   -- print_syntax_tree(parser, {}, "foo?")
+   print_syntax_tree(parser, {}, "(Foo)")
+   print_syntax_tree(parser, {}, "(FOO)")
+   print_syntax_tree(parser, {}, "(_foo)")
+   print_syntax_tree(parser, {}, "(_)")
+   print_syntax_tree(parser, {}, "(foo())")
+   print_syntax_tree(parser, {}, "(foo(123, X, _y, _, z))")
+   print_syntax_tree(parser, {}, "(foo(g(X, h(y))))")
+   print_syntax_tree(parser, {}, "([])")
+   print_syntax_tree(parser, {}, "([Foo, 123])")
+   print_syntax_tree(parser, {}, "([Foo, 123 | bar(X, Foo)])")
+   print_syntax_tree(parser, {}, "([Foo, 123 | Bar])")
+   print_syntax_tree(parser, {}, "(((((foo())))))")
+end
+
+function test_build_operator_tree ()
+   local parser_table = table.merge(pp.parser_table, { lpeg.V'term' })
+   local parser = lpeg.P(parser_table)
+   print_syntax_tree(parser, pp.operators, "A + B")
+   print_syntax_tree(parser, pp.operators, "A + B * C + D")
+   print_syntax_tree(parser, pp.operators, "A + B * C * D - E")
+end
+
+function test_program_syntax () 
+   local parser = pp.parser
+   print_syntax_tree(parser, pp.operators, "f(x).")
+   print_syntax_tree(parser, pp.operators, "f(1 + 1, [a,b,c]).")
+   print_syntax_tree(parser, pp.operators, [[
+     f(X,Y) :- g(Y, X), h(X, X); foo(bar), z(Y).
+     f(X,Y) :- g(X, X), h(X, Y), bar(foo).
+     g(X,Y) :- asdf(X, Y).
+   ]])
 end
