@@ -13,7 +13,7 @@ local C, Cb, Cc, Cg, Cs, Ct =
 local poem_parser = {}
 
 local digit = R'09'
-local special_char = S'_+-%*/$&@#^<>='
+local special_char = S'_+-%*\\/$&@#^<>='
 local non_word_char = special_char + S'!?;:'
 local reserved_char = S'|,.'
 local word_start_char = R('az')
@@ -76,7 +76,8 @@ end
 local function make_fact_node (t)
    local result = {}
    result.type = t[1]
-   result.fact = t[3]
+   result.conclusion = t[3]
+   result.premises = {}
    return result
 end
 
@@ -225,11 +226,11 @@ local term_table = {
 }
 
 local program_table = {
-   fact = node("fact", 
+   fact = node("clause", 
 	       V'compound_term' *  P'.', 
 	       make_fact_node)
       * V'ws';
-   rule = node("rule", 
+   rule = node("clause", 
 	       V'compound_term' * P':-' * V'term_no_dot' * P'.', 
 	       make_rule_node) *
                V'ws';
@@ -269,9 +270,11 @@ local unary_operators = {
 local binary_operators = {
    ["-->"]   = { precedence = 1200, associativity = "xfx" },
    [":-"]    = { precedence = 1200, associativity = "xfx" },
-   [";"]     = { precedence = 1100, associativity = "xfy" },
+   [";"]     = { precedence = 1100, associativity = "xfy", replacement = "or" },
+   ["or"]    = { precedence = 1100, associativity = "xfy" },   
    ["->"]    = { precedence = 1050, associativity = "xfy" },
-   [","]     = { precedence = 1000, associativity = "xfy" },
+   [","]     = { precedence = 1000, associativity = "xfy", replacement = "and" },
+   ["and"]   = { precedence = 1000, associativity = "xfy" },
    ["\\"]    = { precedence =  954, associativity = "xfy" },
    ["<"]     = { precedence =  700, associativity = "xfx" },
    ["="]     = { precedence =  700, associativity = "xfx" },
@@ -349,6 +352,18 @@ local function binop_precedence (op, binops)
 end
 poem_parser.binop_precedence = binop_precedence
 
+local function binop_replacement (op, binops)
+   binops = binops or binary_operators
+   local opspec = binops[op]
+   local result = op
+   if opspec then
+      result = opspec.replacement or op
+   end
+   return result
+end
+poem_parser.binop_replacement = binop_replacement
+
+-- Forward declaration
 local build_syntax_tree
 
 -- This function takes a list of operators and build a syntax tree
@@ -395,7 +410,7 @@ local function build_operator_tree (pts, operators)
       if t then
 	 local rhs = expression(lbp(t))
 	 local result = { type = "binop",
-			  operator = t.value,
+			  operator = binop_replacement(t.value, binops),
 			  lhs = left,
 			  rhs = rhs }
 	 -- print("led: result")
@@ -416,14 +431,17 @@ local function build_operator_tree (pts, operators)
       -- rbp is the right binding power
       -- print("expression: rbp = ", rbp)
       local t = token
-      -- print("expression: token")
+      -- print("expression: t")
       -- table.print(t)
       token = next()
-      if (token) then
-	 -- print("expression: lbp(token) = ", lbp(token))
-      end
+      -- if (token) then
+      -- 	 print("expression: token")
+      -- 	 table.print(token)
+      -- 	 print("expression: lbp(token) = ", lbp(token))
+      -- end
       local left = build_syntax_tree(t, operators)
-      -- print("expression: built syntax tree")
+      -- print("expression: built syntax tree:")
+      -- table.print(left)
       while token and rbp < lbp(token) do
 	 t = token
 	 token = next()
@@ -476,20 +494,10 @@ function build_syntax_tree (pt, operators)
       end	  
    elseif node_type == "sequence_term" then
       return build_operator_tree(pt.elements, operators)
-   elseif node_type == "fact" then
-      local fact = pt.fact
-      if not fact then
-	 error("Empty fact?")
-      elseif not fact.type then
-	 error("Fact without type?")
-      else
-	 return { type = "fact",
-		  fact = bst(fact) }
-      end
-   elseif node_type == "rule" then
-      return { type = "rule",
+   elseif node_type == "clause" then
+      return { type = "clause",
 	       conclusion = bst(pt.conclusion),
-	       premises = map(bst, pt.premises) }
+	       premise = map(bst, pt.premises)[1] }
    elseif node_type == "program" then
       return { type = "program",
 	       elements = map(bst, pt.elements) }

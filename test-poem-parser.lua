@@ -178,6 +178,7 @@ function test_clause_parser()
      f(X,Y) :- g(X, X), h(X, Y), bar(foo).
      g(X,Y) :- asdf(X, Y).
    ]])
+   print_parse_tree(parser, "f(X) :- g(Y) =\\= g(Z) -> h(Z) xor h(true).")
 end
 
 function test_term_syntax()
@@ -256,4 +257,8 @@ function test_program_syntax ()
      f(X,Y) :- g(X, X), h(X, Y), bar(foo).
      g(X,Y) :- asdf(X, Y).
    ]])
+   print_syntax_tree(parser, pp.operators,
+		     "f(X) :- g(Y), g(Z) :- h(Y); h(Z).")
+   print_syntax_tree(parser, pp.operators,
+		     "f(X) :- g(Y) =\\= g(Z) -> h(Z) xor h(true).")
 end
