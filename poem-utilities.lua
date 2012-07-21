@@ -24,6 +24,35 @@ function table.print_rec(thing, skip_newline)
    end
 end
 
+-- Generate a string containing the contents of a table.
+function table.tostring (thing)
+   local result = {}
+   local function push (item)
+      result[#result + 1] = item
+   end 
+   if (type(thing) == "table") then
+      push('{')
+      local sep = ''
+      for _,v in ipairs(thing) do
+	 push(sep); push(table.tostring(v));
+	 sep = ', '
+      end
+      for k,v in pairs(thing) do
+	 if (type(k) ~= 'number') then
+	    push(sep); push(k); push(' = '); push(table.tostring(v));
+	    sep = ', '
+	 end
+      end
+      push('}')
+      return table.concat(result)
+   elseif type(thing) == "string" then
+      return '"' .. thing .. '"'
+   else
+      return tostring(thing)
+   end
+end
+
+
 -- Print a table in tabular form; print nestet tables with
 -- table.print_rec
 function table.print(tab)

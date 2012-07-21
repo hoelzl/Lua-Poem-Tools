@@ -13,22 +13,54 @@ local C, Cb, Cc, Cg, Cs, Ct =
 local poem_parser = {}
 
 local digit = R'09'
-local special_char = S'_+-%*\\/$&@#^<>='
-local non_word_char = special_char + S'!?;:'
-local reserved_char = S'|,.'
+-- TODO: Replace this rather random collection of symbols with some
+-- Unicode character class.
+local special_char = 
+   S'_+-–~±%*/$&@#^<>≤≥‹›=≠≈∑√∫÷?!§~¡£€¢∞¶•·ªº°™®†‡¥π…¬˚∆˙©Ωµ'
+local non_word_char = S'|:;,.'
+local reserved_char = S'\\\''
 local word_start_char = R('az')
-local word_char = word_start_char + R'AZ' + digit + special_char
+-- TODO: We should really allow any letterlike char here.
+local letter = R('az', 'AZ') + S'äöüÄÖÜßøåÅçÇ'
+local word_char = letter + digit + special_char
 local operator_start_char = special_char + non_word_char
 local operator_char = operator_start_char + reserved_char
 
-local function K (k)
-  return P(k) * -word_char;
-end
+local node_metatable = {
+   __tostring = function (t)
+      return table.tostring(t, true)
+   end,
+   __eq = function (lhs, rhs)
+      for k, v in pairs(lhs) do
+	 if rhs[k] ~= v then return false end
+      end
+      for k, v in pairs(rhs) do
+	 if lhs[k] ~= v then return false end
+      end
+      return true
+   end
+}
 
-local function remove_full_match (t) 
-   table.remove(t, 2)
-   return t
+local function set_node_metatable (node)
+   if (type(node) == "table") then
+      setmetatable(node, node_metatable)
+   else
+      error(table.tostring(node) .. " is not a table.")
+   end
+   return node
 end
+poem_parser.set_node_metatable = set_node_metatable
+
+local function set_node_metatable_recursively (node)
+   if (type(node) == "table") then
+      setmetatable(node, node_metatable)
+      for _, n in pairs(node) do
+	 set_node_metatable_recursively(n)
+      end
+   end
+   return node
+end
+poem_parser.set_node_metatable_recursively = set_node_metatable_recursively
 
 local function make_simple_node (t)
    local result = {}
@@ -89,13 +121,13 @@ local function make_rule_node (t)
    return result
 end
 
-
 local function node (id, pattern, fun)
-   if fun then
-      return Ct(Cc(id) * C(pattern)) / fun
-   else
-      return Ct(Cc(id) * C(pattern)) / make_simple_node
+   fun = fun or make_simple_node
+   local function fun_with_mt (t)
+      local result = fun(t)
+      return set_node_metatable(result)
    end
+   return (Ct(Cc(id) * C(pattern))) / fun_with_mt
 end
 poem_parser.node = node
 
@@ -105,24 +137,25 @@ local lexer_table = {
    non_word_char = non_word_char;
    reserved_char = reserved_char;
    word_start_char = word_start_char;
+   letter = letter;
    word_char = word_char;
    operator_start_char = operator_start_char;
    operator_char = operator_char;
 
-   keywords = K('forall') + K('exists');
-
-   comment = P'--' * (P(1) - P'\n')^0 * (P'\n' + -P(1));
+   any_char_but_newline = P(1) - P'\n';
+   newline_or_eof = P'\n' + -P(1);
+   comment = P'--' * V'any_char_but_newline'^0 * V'newline_or_eof';
    ws = (S('\r\n\f\t ') + V'comment')^0;
    
    number = V'ws' * 
       node("number",
 	   (P'-')^-1 * V'ws' * digit^1 * (P'.' * digit^1)^-1 *
-	      (S'eE' * (P'-')^-1 * digit^1)^-1 * -word_char) *
+	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
       V'ws' +
       V'ws' *
       node("number",
 	   (P'-')^-1 * V'ws' * P'.' * digit^1 *
-	      (S'eE' * (P'-')^-1 * digit^1)^-1 * -word_char) *
+	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
       V'ws';
  
    string = V'ws' *
@@ -131,27 +164,24 @@ local lexer_table = {
       V'ws';
 
    atom_word = V'ws' *
-      node("atom", (word_start_char * word_char^0) - V'keywords') *
+      node("atom", V'word_start_char' * V'word_char'^0) *
       V'ws';
    atom_operator = V'ws' *
       node("atom",
-	   ((operator_start_char^1 * operator_char^0) + 
-	    (reserved_char^1 * operator_char^0))) *
+	   V'operator_start_char'^1 * V'operator_char'^0) *
       V'ws';
    quoted_atom = V'ws' *
       node("atom", 
 	   P'\'' * (P'\\' * P(1) + (1 - P'\''))^0 * P'\'',
 	  make_quoted_atom_node) *
       V'ws';
-   atom = V'atom_word' + V'atom_operator' + V'quoted_atom';
-   constant = V'number' + V'atom' + V'string';
+   escaped_atom = V'atom_word' + 
+      P'\\' * V'atom_operator' + 
+      P'(' * V'atom_operator' * P')' + 
+      V'quoted_atom';
+   atom = V'escaped_atom' + V'atom_operator';
 
-   command = V'ws' *
-      node("command", word_start_char * word_char^0 * P('!')) *
-      V'ws';
-   sensing_action = V'ws' *
-      node("sensing_action", word_start_char * word_char^0 * P('?')) *
-      V'ws';
+   constant = V'number' + V'atom' + V'string';
 
    named_variable = V'ws' *
       node("variable", 
@@ -163,7 +193,7 @@ local lexer_table = {
       V'ws';
    variable = V'named_variable' + V'anonymous_variable';
 
-   functor = V'command' + V'sensing_action' + V'atom';
+   functor = V'escaped_atom';
 }
 
 local term_table = {
@@ -216,9 +246,9 @@ local term_table = {
 			make_sequence_node) +
                    (V'single_term' - P',');
    term_no_vbar = node("sequence_term",
-		       (V'single_term' - (P'|' + P','))^2,
+		       (V'single_term' - S'|,')^2,
 		       make_sequence_node) +
-                  (V'single_term' - (P'|' + P','));
+                  (V'single_term' - S'|,');
    term_no_dot = node("sequence_term",
 		      (V'single_term' - P'.')^2,
 		      make_sequence_node) +
@@ -459,30 +489,32 @@ function build_syntax_tree (pt, operators)
    local function bst (node)
       return build_syntax_tree(node, operators)
    end
+   local function mt (node)
+      return set_node_metatable(node)
+   end
    if node_type == "number" then
-      return { type = "number",
-	       value = tonumber(pt.value) }
-   elseif node_type == "string" or node_type == "atom"
-      or node_type == "command" or node_type == "sensing_action" then
+      return mt { type = "number",
+		  value = tonumber(pt.value) }
+   elseif node_type == "string" or node_type == "atom" then
       return pt
    elseif node_type == "variable" then
-      return { type = "variable", name = pt.value }
+      return mt { type = "variable", name = pt.value }
    elseif node_type == "anonymous_variable" then
-      return { type = "anonymous_variable" }
+      return mt { type = "anonymous_variable" }
    elseif node_type == "compound_term" then
-      return { type = "compound_term",
-	       functor = pt.functor,
-	       arguments = map(bst, pt.arguments) }
+      return mt { type = "compound_term",
+		  functor = pt.functor,
+		  arguments = map(bst, pt.arguments) }
    -- We might expands list here, but maybe we can use list notation
    -- in the sitcalc axioms, so it's probably safer to let them be for
    -- the time being.
    elseif node_type == "improper_list" then
-      return { type = "improper_list",
-	       elements = map(bst, pt.elements),
-	       tail = bst(pt.tail) }
+      return mt { type = "improper_list",
+		  elements = map(bst, pt.elements),
+		  tail = bst(pt.tail) }
    elseif node_type == "list" then
-      return { type = "list",
-		elements = map(bst, pt.elements) }
+      return mt { type = "list",
+		  elements = map(bst, pt.elements) }
    elseif node_type == "paren_term" then
       local value = pt.value
       if not value then
@@ -490,17 +522,17 @@ function build_syntax_tree (pt, operators)
       elseif not value.type then
 	 error("Parenthesized term without value type.")
       else
-	 return bst(value)
+	 return mt(bst(value))
       end	  
    elseif node_type == "sequence_term" then
-      return build_operator_tree(pt.elements, operators)
+      return mt(build_operator_tree(pt.elements, operators))
    elseif node_type == "clause" then
-      return { type = "clause",
-	       conclusion = bst(pt.conclusion),
-	       premise = map(bst, pt.premises)[1] }
+      return mt { type = "clause",
+		  conclusion = bst(pt.conclusion),
+		  premise = map(bst, pt.premises)[1] }
    elseif node_type == "program" then
-      return { type = "program",
-	       elements = map(bst, pt.elements) }
+      return mt { type = "program",
+		  elements = map(bst, pt.elements) }
    end
    print("Failed to match node type " .. node_type)
    table.print(pt)
