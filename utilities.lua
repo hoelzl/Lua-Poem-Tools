@@ -14,12 +14,14 @@ local function print_rec(thing, skip_newline, level)
 	 io.write('{')
 	 local sep = ''
 	 for _,v in ipairs(thing) do
-	    io.write(sep); print_rec(v, true, level - 1);
+	    io.write(sep);
+	    print_rec(v, true, level - 1);
 	    sep = ', '
 	 end
 	 for k,v in pairs(thing) do
 	    if (type(k) ~= 'number') then
-	       io.write(sep, k, ' = '); print_rec(v, true, level - 1);
+	       io.write(sep, k, ' = ');
+	       print_rec(v, true, level - 1);
 	       sep = ', '
 	    end
 	 end
@@ -54,7 +56,8 @@ local function table_tostring (thing, level)
       end
       for k,v in pairs(thing) do
 	 if (type(k) ~= 'number') then
-	    push(sep); push(k); push(' = '); push(table_tostring(v, level - 1));
+	    push(sep); push(k); push(' = ');
+	    push(table_tostring(v, level - 1));
 	    sep = ', '
 	 end
       end
@@ -167,7 +170,9 @@ local function set_equality_metatable (tab, error_if_present)
 	 if not mt.__eq then
 	    mt.__eq = equal
 	 elseif error_if_present then
-	    error("Metatable for " .. table_tostring(tab) .. "already has an __eq field.")
+	    error("Metatable for " ..
+		  table_tostring(tab) ..
+		  "already has an __eq field.")
 	 end
       else
 	 -- print("Setting metatable.")
@@ -180,7 +185,51 @@ local function set_equality_metatable (tab, error_if_present)
 end
 utilities.set_equality_metatable = set_equality_metatable
 
+-- Utilities for the lexer/parser
+--
+local node_metatable = {
+   __tostring = function (t)
+      return utilities.table_tostring(t, 15)
+   end,
+   __eq = utilities.equal
+}
+
+local function set_node_metatable (node)
+   if (type(node) == 'table') then
+      setmetatable(node, node_metatable)
+   else
+      error(tostring(node) .. " is not a table.")
+   end
+   return node
+end
+utilities.set_node_metatable = set_node_metatable
+
+local function set_node_metatable_recursively (node)
+   if (type(node) == 'table') then
+      setmetatable(node, node_metatable)
+      for _, n in pairs(node) do
+	 set_node_metatable_recursively(n)
+      end
+   end
+   return node
+end
+utilities.set_node_metatable_recursively = set_node_metatable_recursively
+
+-- Utilities for testing
+--
 local function assert_table_equal (tab1, tab2, message)
    assert_true(equal(tab1, tab2), message)
 end
 utilities.assert_table_equal = assert_table_equal
+
+local function assert_node(lexer, code, parse_tree)
+   -- Recursively set all metatables to ensure the correct comparison
+   local result = set_node_metatable_recursively(lexer:match(code))
+   parse_tree = set_node_metatable_recursively(parse_tree)
+   assert_equal(getmetatable(parse_tree), getmetatable(result),
+	       "Metatables do not match for " .. code .. ".")
+   assert_equal(parse_tree, result);
+   return result
+end
+utilities.assert_node = assert_node
+

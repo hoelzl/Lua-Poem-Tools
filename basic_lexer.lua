@@ -1,4 +1,4 @@
--- The basic parsing lexer.
+-- The basic lexer.
 --
 module('basic_lexer', package.seeall)
 
@@ -39,35 +39,6 @@ local basic_char_syntax_table = {
 }
 basic_lexer.char_syntax_table = basic_char_syntax_table
 
-
-local node_metatable = {
-   __tostring = function (t)
-      return utils.table_tostring(t, 15)
-   end,
-   __eq = utils.equal
-}
-
-local function set_node_metatable (node)
-   if (type(node) == "table") then
-      setmetatable(node, node_metatable)
-   else
-      error(tostring(node) .. " is not a table.")
-   end
-   return node
-end
-basic_lexer.set_node_metatable = set_node_metatable
-
-local function set_node_metatable_recursively (node)
-   if (type(node) == "table") then
-      setmetatable(node, node_metatable)
-      for _, n in pairs(node) do
-	 set_node_metatable_recursively(n)
-      end
-   end
-   return node
-end
-basic_lexer.set_node_metatable_recursively = set_node_metatable_recursively
-
 local function make_simple_node (t)
    local result = {}
    result.type = t[1]
@@ -76,26 +47,10 @@ local function make_simple_node (t)
    return result
 end
 
-local function make_sequence_node (t)
+local function make_string_node (t)
    local result = {}
    result.type = t[1]
-   result.pos = t[2]
-   result.elements = utils.slice(t, 4)
-   return result
-end
-
-local function make_modified_term_node (t)
-   local result = {}
-   result.type = t[1]
-   result.pos = t[2]
-   result.value = t[4]
-   return result
-end
-
-local function make_simple_atom_node (t)
-   local result = {}
-   result.type = t[1]
-   result.pos = t[2]
+   result.pos = t[2] - 1
    result.name = t[3]
    return result
 end
@@ -103,53 +58,21 @@ end
 local function make_quoted_atom_node (t)
    local result = {}
    result.type = t[1]
-   result.pos = t[2]
+   result.pos = t[2] - 1
    -- FIXME: We need to process control characters in the value
-   result.name = string.sub(t[3], 2, -2)
+   result.name = t[3]
    return result
 end
 
-local function make_compound_term_node (t)
-   local result = {}
-   result.type = t[1]
-   result.pos = t[2]
-   result.functor = t[4]
-   result.arguments = utils.slice(t, 5)
-   return result
-end
-
-local function make_improper_list_node (t)
-   local result = { type = "improper_list" }
-   result.pos = t[2]
-   local n = #t
-   result.elements = utils.slice(t, 4, n-1)
-   result.tail = t[n]
-   return result
-end
-
-local function make_fact_node (t)
-   local result = {}
-   result.type = t[1]
-   result.pos = t[2]
-   result.conclusion = t[4]
-   result.premises = {}
-   return result
-end
-
-local function make_rule_node (t)
-   local result = {}
-   result.type = t[1]
-   result.pos = t[2]
-   result.conclusion = t[4]
-   result.premises = utils.slice(t, 5)
-   return result
+local function make_result_list (t)
+   return utils.slice(t, 4)
 end
 
 local function node (id, pattern, fun)
    fun = fun or make_simple_node
    local function fun_with_mt (t)
       local result = fun(t)
-      return set_node_metatable(result)
+      return utils.set_node_metatable(result)
    end
    return (Ct(Cc(id) * Cp() * C(pattern))) / fun_with_mt
 end
@@ -158,6 +81,7 @@ basic_lexer.node = node
 local lexer_table = {
    any_char_but_newline = P(1) - P'\n';
    newline_or_eof = P'\n' + -P(1);
+   -- TODO: Keep a line count for error messages
    comment = P'--' * V'any_char_but_newline'^0 * V'newline_or_eof';
    ws = (S('\r\n\f\t ') + V'comment')^0;
    
@@ -172,37 +96,34 @@ local lexer_table = {
 	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
       V'ws';
  
-   string = V'ws' *
+   string = V'ws' * P'"' *
       node("string",
-	   P'"' * (P'\\' * P(1) + (1 - P'"'))^0 * P'\"') *
-      V'ws';
+	   (P'\\' * P(1) + (1 - P'"'))^0,
+	  make_string_node) *
+      P'\"' * V'ws';
 
    atom_word = V'ws' *
       node("atom",
 	   V'word_start_char' * V'word_char'^0,
-	  make_simple_atom_node) *
+	  make_simple_node) *
       V'ws';
    atom_operator = V'ws' *
       node("atom",
-	   V'operator_start_char'^1 * V'operator_char'^0,
-	  make_simple_atom_node) *
+	   V'operator_start_char' * V'operator_char'^0,
+	  make_simple_node) *
       V'ws';
-   quoted_atom = V'ws' *
+   atom_paren = V'ws' * S'()[]{}' * V'ws';
+   quoted_atom = V'ws' * P'\'' *
       node("atom", 
-	   P'\'' * (P'\\' * P(1) + (1 - P'\''))^0 * P'\'',
+	   (P'\\' * P(1) + (1 - P'\''))^0,
 	  make_quoted_atom_node) *
-      V'ws';
-   -- escaped_atom = V'atom_word' + 
-   --    P'\\' * V'atom_operator' + 
-   --    P'(' * V'atom_operator' * P')' + 
-   --    V'quoted_atom';
-   -- atom = V'escaped_atom' + V'atom_operator';
+      P'\'' * V'ws';
    atom = V'atom_word' + 
+      V'atom_paren' +
       P'\\' * V'atom_operator' + 
       P'(' * V'atom_operator' * P')' + 
       V'atom_operator' +
       V'quoted_atom';
-
 
    constant = V'number' + V'atom' + V'string';
 
@@ -216,90 +137,16 @@ local lexer_table = {
       V'ws';
    variable = V'named_variable' + V'anonymous_variable';
 
-   -- functor = V'escaped_atom';
-   functor = V'atom';
-}
+   term =  V'variable' + V'constant';
 
-local term_table = {
-   variable_list = V'ws' *
-      V'variable' * (V'ws' * P',' * V'ws' * V'variable')^0 *
-      V'ws';
-
-   simple_term =  V'variable' + V'constant';
-
-   -- term_list = V'ws' *
-   --    node("term_list",
-   -- 	   V'term' * (V'ws' * V'term')^0,
-   -- 	   make_sequence_node) *
-   --    V'ws';
-   term_list_no_comma = V'ws' *
-      V'term_no_comma' * (V'ws' * P',' * V'ws' * V'term_no_comma')^0 *
-      V'ws';
-   term_list_no_vbar = V'ws' *
-      V'term_no_vbar' * (V'ws' * P',' * V'ws' * V'term_no_vbar')^0 *
-      V'ws';
-
-   compound_term = node("compound_term",
-			V'functor' * P'(' * V'ws' *
-			   V'term_list_no_comma'^-1 *
-			   V'ws' * P')',
-		       make_compound_term_node) *
-                   V'ws';
-
-   improper_list_term = V'ws' * P'[' * 
-      node("improper_list", 
-	   V'term_list_no_vbar'^-1 * 
-	      V'ws' * P'|' * V'ws' * V'term',
-	   make_improper_list_node) *
-	      V'ws' * P']' * V'ws';
-   proper_list_term = V'ws' * P'[' * 
-      node("list", V'term_list_no_vbar'^-1, make_sequence_node) *
-      P']'* V'ws';
-   list_term = V'improper_list_term' + V'proper_list_term';
-
-   paren_term = V'ws' * P'(' * V'ws' *
-      node("paren_term", V'term', make_modified_term_node) *
-      P')' * V'ws';
-
-   complex_term = V'compound_term' + V'list_term' + V'paren_term';
-   single_term =  V'complex_term' + V'simple_term';
-   term = node("sequence_term",
-	       V'single_term'^2,
-	       make_sequence_node) +
-           V'single_term';
-   term_no_comma = node("sequence_term",
-			(V'single_term' - P',')^2,
-			make_sequence_node) +
-                   (V'single_term' - P',');
-   term_no_vbar = node("sequence_term",
-		       (V'single_term' - S'|,')^2,
-		       make_sequence_node) +
-                  (V'single_term' - S'|,');
-   term_no_dot = node("sequence_term",
-		      (V'single_term' - P'.')^2,
-		      make_sequence_node) +
-                 (V'single_term' - P'.');
-}
-
-local program_table = {
-   fact = node("clause", 
-	       V'compound_term' *  P'.', 
-	       make_fact_node)
-      * V'ws';
-   rule = node("clause", 
-	       V'compound_term' * P':-' * V'term_no_dot' * P'.', 
-	       make_rule_node) *
-               V'ws';
-   clause = V'rule' + V'fact';
-   
-   program = node("program", (V'clause')^1, make_sequence_node);
+   term_list = node('term-list',
+		    (V'ws' * V'term' * V'ws')^0,
+		   make_result_list)
 }
 
 local lexer_table = utils.merge(basic_char_syntax_table,
 				 lexer_table,
-				 term_table,
-				 -- program_table,
-				 {V'term'})
+				 {V'term_list'})
 basic_lexer.lexer_table = lexer_table
 
 local function merge_character_syntax (char_syntax_table, lexer_table)
@@ -313,7 +160,7 @@ local function make_lexer (initial_rule, char_syntax_table, lexer_table)
    lexer_table = lexer_table or basic_lexer.lexer_table
    lexer_table = merge_character_syntax(char_syntax_table, lexer_table)
    if initial_rule then
-      lexer_table[0] = V(initial_rule)
+      lexer_table[1] = V(initial_rule)
    end
    return P(lexer_table)
 end
