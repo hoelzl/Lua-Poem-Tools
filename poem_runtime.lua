@@ -1,25 +1,22 @@
 -- The runtime for the Poem system.
 --
+module('poem_runtime', package.seeall)
 
-local utils = require 'poem-utilities'
-local pp = require 'poem-parser'
-
-local runtime = {}
+local utils = require 'utilities'
+local pp = require 'poem_parser'
 
 -- The trail for undoing unifications
 local trail = {}
-runtime.trail = trail
+poem_runtime.trail = trail
 
 local function clear_trail ()
    for k, _ in pairs(trail) do
       trail[k] = nil
    end
 end
-runtime.clear_trail = clear_trail
+poem_runtime.clear_trail = clear_trail
 
 local function push_to_trail (value)
    trail[#trail + 1] = value
 end
-runtime.push_to_trail = push_to_trail
-
-package.loaded['poem-runtime'] = runtime
+poem_runtime.push_to_trail = push_to_trail

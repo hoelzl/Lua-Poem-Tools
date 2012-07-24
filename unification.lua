@@ -1,8 +1,10 @@
 -- An implementation of destructive unification
 --
 
-local utils = require 'poem-utilities'
-local runtime = require 'poem-runtime'
+module('unification', package.seeall)
+
+local utils = require 'utilities'
+local runtime = require 'poem_runtime'
 
 local unification = {}
 local trail = runtime.trail

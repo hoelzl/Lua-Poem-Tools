@@ -1,9 +1,9 @@
 -- Tests of the unification algorithm
 
-module('test-poem-unification', package.seeall)
+module('test_poem_unification', package.seeall)
 
-local runtime = require 'poem-runtime'
-local unification = require 'poem-unification'
+local runtime = require 'poem_runtime'
+local unification = require 'poem_unification'
 local test = require 'lunatest'
 
 local trail, clear_trail = runtime.trail, runtime.clear_trail

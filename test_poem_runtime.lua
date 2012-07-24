@@ -1,9 +1,9 @@
 -- Tests of the Poem runtime
 --
 
-module('test-poem-runtime', package.seeall)
+module('test_poem_runtime', package.seeall)
 
-local runtime = require 'poem-runtime'
+local runtime = require 'poem_runtime'
 local test = require 'lunatest'
 
 local trail, clear_trail, push_to_trail = 
