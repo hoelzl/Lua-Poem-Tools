@@ -61,6 +61,15 @@ local function assert_lex_parse (code, expected, lexer, rbp, env, override)
    assert_equal(expected, result);
 end
 
+local function assert_lex_parse_error (code, lexer, rbp, env, override)
+   lexer = lexer or lex.lexer
+   rbp = rbp or 0
+   env = env or pratt.default_environment
+   override = override or {}
+   local lex_result = lexer:match(code)
+   assert_error(function () parse(rbp, lex_result, 1, env, override) end)
+end
+
 function test_operator ()
    assert_equal('foo', operator { name = 'foo'})
    assert_not_equal('foo', operator { name = 'bar' })
@@ -320,6 +329,7 @@ end
 function test_paren_parse_1 ()
    local tokens = {{ name = '(' }, { '1' }, { name = '+' }, { '2' }, { name = ')' }} 
    local expected = { op = '+',
+		      delimited = true,
 		      lhs = tokens[2],
 		      rhs = tokens[4] }
    assert_pratt_parse(expected, tokens)
@@ -330,6 +340,7 @@ function test_paren_parse_2 ()
 		   { name = '*' }, { '3' }} 
    local expected = { op = '*',
 		      lhs = { op = '+',
+			      delimited = true,
 			      lhs = tokens[2],
 			      rhs = tokens[4] },
 		      rhs = tokens[7] }
@@ -355,7 +366,9 @@ function test_paren_parse_5 ()
 		   { '1' }, { name = ')' },
 		   { name = '+' }, { '2' }, { name = ')' }, { name = ')' }}
    local expected = { op = '+',
-		      lhs = { '1' },
+		      delimited = true,
+		      lhs = { '1',
+			      delimited = true },
 		      rhs = { '2' } }
    assert_pratt_parse(expected, tokens)
 end
@@ -367,7 +380,9 @@ function test_paren_parse_6 ()
 		   { name = '*' }, { '3' }}
    local expected = { op = '*',
 		      lhs = { op = '+',
-			      lhs = { '1' },
+			      delimited = true,
+			      lhs = { '1',
+				      delimited = true },
 			      rhs = { '2'} },
 		      rhs = { '3' }}
    assert_pratt_parse(expected, tokens)
@@ -379,6 +394,7 @@ function test_paren_parse_7 ()
    local expected = { op = '+',
 		      lhs = { '1' },
 		      rhs = { op = '-',
+			      delimited = true,
 			      lhs = { '2' },
 			      rhs = { '3' } }}
    assert_pratt_parse(expected, tokens)
@@ -390,6 +406,7 @@ function test_paren_parse_8 ()
    local expected = { op = '*',
 		      lhs = { '1' },
 		      rhs = { op = '-',
+			      delimited = true,
 			      lhs = { '2' },
 			      rhs = { '3' } }}
    assert_pratt_parse(expected, tokens)
@@ -497,6 +514,7 @@ function test_lexer_and_parser_4 ()
    local expected = {op = "*",
 		     lhs = {type = "number", pos = 1, name = "1"},
 		     rhs = {op = "+",
+			    delimited = true,
 			    lhs = {op = "+",
 				   lhs = {type = "number", pos = 6, name = "2"},
 				   rhs = {type = "number", pos = 10, name = "3"}},
@@ -509,6 +527,7 @@ function test_lexer_and_parser_5 ()
    local expected = {op = "*",
 		     lhs = {type = "number", pos = 1, name = "7"},
 		     rhs = {op = "+",
+			    delimited = true,
 			    lhs = {type = "number", pos = 6, name = "8"},
 			    rhs = {type = "number", pos = 10, name = "9"}}}
    assert_lex_parse(code, expected)
@@ -519,6 +538,7 @@ function test_lexer_and_parser_6 ()
    local expected = {op = "^",
 		     lhs = {type = "number", pos = 1, name = "7"},
 		     rhs = {op = "+",
+			    delimited = true,
 			    lhs = {type = "number", pos = 6, name = "8"},
 			    rhs = {type = "number", pos = 10, name = "9"}}}
    assert_lex_parse(code, expected)
@@ -526,23 +546,32 @@ end
 
 function test_lexer_and_parser_7 ()
    local code = "1 * (2 + 3 + 4) + 5 * 6 ^ 7 ^ (8 + 9)"
-   local expected = {op = "+",
-		     lhs = {op = "*",
-			    lhs = {type = "number", pos = 1, name = "1"},
-			    rhs = {op = "+",
-				   lhs = {op = "+",
-					  lhs = {type = "number", pos = 6, name = "2"},
-					  rhs = {type = "number", pos = 10, name = "3"}},
-				   rhs = {type = "number", pos = 14, name = "4"}}},
-		     rhs = {op = "*",
-			    lhs = {type = "number", pos = 19, name = "5"},
-			    rhs = {op = "^",
-				   lhs = {type = "number", pos = 23, name = "6"}, 
-				   rhs = {op = "^",
-					  lhs = {type = "number", pos = 27, name = "7"},
-					  rhs = {op = "+",
-						 lhs = {type = "number", pos = 32, name = "8"},
-						 rhs = {type = "number", pos = 36, name = "9"}}}}}}
+   local expected = {
+      op = "+",
+      lhs = {op = "*",
+	     lhs = {type = "number", pos = 1, name = "1"},
+	     rhs = {
+		op = "+",
+		delimited = true,
+		lhs = {
+		   op = "+",
+		   lhs = {type = "number", pos = 6, name = "2"},
+		   rhs = {type = "number", pos = 10, name = "3"}},
+		rhs = {type = "number", pos = 14, name = "4"}}},
+      rhs = {
+	 op = "*",
+	 lhs = {type = "number", pos = 19, name = "5"},
+	 rhs = {
+	    op = "^",
+	    lhs = {type = "number", pos = 23, name = "6"}, 
+	    rhs = {
+	       op = "^",
+	       lhs = {type = "number", pos = 27, name = "7"},
+	       rhs = {
+		  op = "+",
+		  delimited = true,
+		  lhs = {type = "number", pos = 32, name = "8"},
+		  rhs = {type = "number", pos = 36, name = "9"}}}}}}
    assert_lex_parse(code, expected)
 end
 
@@ -624,6 +653,7 @@ end
 function test_lexer_and_parser_fun_4 ()
    local code = "(f())"
    local expected = {op = "compound-term", 
+		     delimited = true,
 		     functor = {type = "atom", pos = 2, name = "f"},
 		     args = {}}
    assert_lex_parse(code, expected)
@@ -659,18 +689,19 @@ end
 
 function test_lexer_and_parser_fun_7 ()
    local code = "f(g(X)) * (1 + 2 * 3)"
-   local expected = {op = "*", 
-		     rhs = {op = "+",
-			    lhs = {type = "number", pos = 12, name = "1"},
-			    rhs = {op = "*",
-				   lhs = {type = "number", pos = 16, name = "2"},
-				   rhs = {type = "number", pos = 20, name = "3"}}},
+   local expected = {op = "*",
 		     lhs = {op = "compound-term", 
 			    functor = {type = "atom", pos = 1, name = "f"},
 			    args = {
 			       {op = "compound-term",
 				functor = {type = "atom", pos = 3, name = "g"},
-				args = {{type = "variable", pos = 5, name = "X"}}}}}}
+				args = {{type = "variable", pos = 5, name = "X"}}}}},
+		     rhs = {op = "+",
+			    delimited = true,
+			    lhs = {type = "number", pos = 12, name = "1"},
+			    rhs = {op = "*",
+				   lhs = {type = "number", pos = 16, name = "2"},
+				   rhs = {type = "number", pos = 20, name = "3"}}}}
    assert_lex_parse(code, expected)
 end
 
@@ -688,9 +719,10 @@ function test_lexer_and_parser_fun_8 ()
 			op = "-", 
 			rhs = {
 			   op = "+",
+			   delimited = true,
 			   lhs = {type = "number", pos = 13, name = "1"},
 			   rhs = {
-			      op = "*",
+			      op = "*",	  
 			      lhs = {type = "number", pos = 17, name = "2"},
 			      rhs = {type = "number", pos = 21, name = "3"}}}}}
    assert_lex_parse(code, expected)
@@ -716,7 +748,8 @@ function test_lexer_and_parser_fun_9 ()
 	       rhs = {
 		  op = "-", 
 		  rhs = {
-		     op = "+",
+		     op = "+",	  
+		     delimited = true,
 		     lhs = {type = "number", pos = 19, name = "1"},
 		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
    assert_lex_parse(code, expected)
@@ -740,9 +773,10 @@ function test_lexer_and_parser_fun_10 ()
 	    rhs = {
 	       op = "-", 
 	       rhs = {
-		  op = "-", 
+		  op = "-",
 		  rhs = {
 		     op = "+",
+		     delimited = true,
 		     lhs = {type = "number", pos = 19, name = "1"},
 		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
    assert_lex_parse(code, expected)
@@ -802,4 +836,94 @@ function test_clause_2 ()
 	    args = {{type = "variable", pos = 23, name = "Z"},
 		    {type = "variable", pos = 26, name = "Y"}}}}}
    assert_lex_parse(code, expected)
+end
+
+function test_clause_3 ()
+   local code = "f(X, Y) :- g(X, Z) :- h(Z, Y)."
+   assert_lex_parse_error(code)
+end
+
+function test_clause_4 ()
+   local code = "f(X, Y) :- (g(X, Z) :- h(Z, Y))."
+   assert_lex_parse(code, {
+		       op = ":-",
+		       lhs = {
+			  op = "compound-term",
+			  functor = {type = "atom", pos = 1, name = "f"},
+			  args = {{type = "variable", pos = 3, name = "X"},
+				  {type = "variable", pos = 6, name = "Y"}}},
+		       rhs = {
+			  op = ":-",
+			  delimited = true,
+			  lhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 13, name = "g"},
+			     args = {
+				{type = "variable", pos = 15, name = "X"},
+				{type = "variable", pos = 18, name = "Z"}}},
+			  rhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 24, name = "h"},
+			     args = {
+				{type = "variable", pos = 26, name = "Z"},
+				{type = "variable", pos = 29, name = "Y"}}}}})
+end
+
+function test_clause_5 ()
+   local code = "f(X, Y) :- (g(X, Z) --> h(Z, Y))."
+   assert_lex_parse(code, {
+		       op = ":-",
+		       lhs = {
+			  op = "compound-term",
+			  functor = {type = "atom", pos = 1, name = "f"},
+			  args = {
+			     {type = "variable", pos = 3, name = "X"},
+			     {type = "variable", pos = 6, name = "Y"}}}, 
+		       rhs = {
+			  op = "-->", 
+			  lhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 13, name = "g"},
+			     args = {
+				{type = "variable", pos = 15, name = "X"},
+				{type = "variable", pos = 18, name = "Z"}}},
+			  rhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 25, name = "h"},
+			     args = {
+				{type = "variable", pos = 27, name = "Z"},
+				{type = "variable", pos = 30, name = "Y"}}},
+			  delimited = true}})
+end
+
+function test_clause_6 ()
+   local code = "f(X, Y) :- g(X, Z) --> h(Z, Y)."
+   assert_lex_parse_error(code)
+end
+
+function test_clause_7 ()
+   local code = "f(X, Y) :- (g(X, Z) --> -->(Z, Y))."
+   assert_lex_parse(code, {
+		       op = ":-",
+		       lhs = {
+			  op = "compound-term",
+			  functor = {type = "atom", pos = 1, name = "f"},
+			  args = {
+			     {type = "variable", pos = 3, name = "X"},
+			     {type = "variable", pos = 6, name = "Y"}}}, 
+		       rhs = {
+			  op = "-->",
+			  delimited = true,
+			  lhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 13, name = "g"},
+			     args = {
+				{type = "variable", pos = 15, name = "X"},
+				{type = "variable", pos = 18, name = "Z"}}},
+			  rhs = {
+			     op = "compound-term",
+			     functor = {type = "atom", pos = 25, name = "-->"},
+			     args = {
+				{type = "variable", pos = 29, name = "Z"},
+				{type = "variable", pos = 32, name = "Y"}}}}})
 end

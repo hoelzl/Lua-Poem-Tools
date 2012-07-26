@@ -51,7 +51,7 @@ local function operator (token, check_for_errors)
 	 return token
       end
    end
-   local op = token.name
+   local op = token.name or token.op
    if not op then 
       if check_for_errors then
 	 error("Can't determine operator of " .. 
@@ -237,11 +237,14 @@ pratt.infix_left = infix_left
 
 local function infix_no (rbp, op, lhs, token, tokens, index, env, override)
    local den, op, opspec, lbp = operator_specification(token, env, override)
-   local next_token = get_token(tokens, index)
-   if left_binding_power(token, env, override) == rbp then
+   local rhs, new_index = parse(lbp - 0.5, tokens, index, env, override)
+   -- print("rhs: ", rhs.op, left_binding_power(rhs.op, env, override))
+   -- print("op:  ", op, left_binding_power(op, env, override))
+   if not rhs.delimited and 
+      left_binding_power(rhs.op, env, override) == 
+      left_binding_power(op, env, override) then
       error("Operator " .. tostring(op) .. " is not associative.")
    end
-   local rhs, new_index = parse(lbp, tokens, index, env, override)
    return env.make_node{ op = op, lhs = lhs, rhs = rhs }, 
           new_index
 end
@@ -260,8 +263,9 @@ local function open_delimiter (end_delimiter)
       local arg, new_index = parse(0, tokens, index, env, {})
       local next_op = operator(get_token(tokens, new_index))
       if next_op ~= end_delimiter then
-	 error("Expected " .. end_delimiter .. ", got " .. next_op)
+	 error("Expected " .. end_delimiter .. ", got " .. tostring(next_op))
       end
+      arg.delimited = true
       return arg, new_index + 1
    end
    return parse_delimiter_list

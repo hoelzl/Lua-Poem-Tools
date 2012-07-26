@@ -82,7 +82,7 @@ local lexer_table = {
    any_char_but_newline = P(1) - P'\n';
    newline_or_eof = P'\n' + -P(1);
    -- TODO: Keep a line count for error messages
-   comment = P'--' * V'any_char_but_newline'^0 * V'newline_or_eof';
+   comment = P'%' * V'any_char_but_newline'^0 * V'newline_or_eof';
    ws = (S('\r\n\f\t ') + V'comment')^0;
    
    number = V'ws' * 

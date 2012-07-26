@@ -28,8 +28,8 @@ function test_atom_operator_lexer ()
 	       { type = "atom", pos = 1, name = "=" })
    assert_node(operator_lexer, "@#$%", 
 	       { type = "atom", pos = 1, name = "@#$%" })
-   assert_node(operator_lexer, "%",
-	       { type = "atom", pos = 1, name = "%" })
+   assert_node(operator_lexer, "!",
+	       { type = "atom", pos = 1, name = "!" })
    assert_node(operator_lexer, ",",
 	       { type = "atom", pos = 1, name = "," })
    assert_node(operator_lexer, "|",
@@ -38,6 +38,36 @@ function test_atom_operator_lexer ()
 	       { type = "atom", pos = 1, name = ":-" })
    assert_node(operator_lexer, ".",
 	       { type = "atom", pos = 1, name = "." })
+end
+
+function test_arrow_operator_1 ()
+   local operator_lexer = lex.make_lexer('atom_operator')
+   assert_node(operator_lexer, "->",
+	       { type = "atom", pos = 1, name = "->" })
+end
+
+function test_arrow_operator_2 ()
+   local operator_lexer = lex.make_lexer('atom_operator')
+   assert_node(operator_lexer, "-->",
+	       { type = "atom", pos = 1, name = "-->" })
+end
+
+function test_arrow_operator_3 ()
+   local operator_lexer = lex.make_lexer('atom_operator')
+   assert_node(operator_lexer, "--->",
+	       { type = "atom", pos = 1, name = "--->" })
+end
+
+function test_arrow_operator_4 ()
+   local operator_lexer = lex.make_lexer('atom_operator')
+   assert_node(operator_lexer, "=>",
+	       { type = "atom", pos = 1, name = "=>" })
+end
+
+function test_arrow_operator_5 ()
+   local operator_lexer = lex.make_lexer('atom_operator')
+   assert_node(operator_lexer, "==>",
+	       { type = "atom", pos = 1, name = "==>" })
 end
 
 function test_term_list_lexer ()
