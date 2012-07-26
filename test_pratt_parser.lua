@@ -7,3 +7,8 @@ local pratt = require 'pratt_parser'
 local test = require 'lunatest'
 
 local assert_node = utils.assert_node
+
+function test_operator ()
+   assert_equal('foo', pratt.operator { name = 'foo'})
+   assert_not_equal('foo', pratt.operator { name = 'bar' })
+end

@@ -4,6 +4,7 @@ require 'lunatest'
 
 lunatest.suite('test_utilities')
 lunatest.suite('test_basic_lexer')
+lunatest.suite('test_pratt_parser')
 -- lunatest.suite('test_basic_parser')
 -- lunatest.suite('test_prolog_parser')
 -- lunatest.suite('test_poem_parser')

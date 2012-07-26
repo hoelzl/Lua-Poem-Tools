@@ -22,6 +22,7 @@
 --
 -- I use the following abbreviations throughout the code:
 --
+-- env =    environment
 -- op =     operator (this is the name of the token, not the full 
 --          token returned by the lexer)
 -- unop =   unary operator
@@ -29,9 +30,10 @@
 -- opspec = operator specification, a table containing all pertinent
 --          information about an operator in a certain environment
 
-require 'strict'
+-- require 'strict'
 local utils = require 'utilities'
-local assert, error, print, tostring = assert, error, print, tostring
+local assert, error, print, tostring, type = 
+   assert, error, print, tostring, type
 local _G, io, table, string = _G, io, table, string
 
 module('pratt_parser')
@@ -71,27 +73,28 @@ end
 pratt.null_context = null_context
 
 -- The default null denotation for tokens that are not operators
-local function default_null_denotation (op, rbp, tokens, index, environment)
+local function default_null_denotation (op, rbp, tokens, index, env, override)
    return environment.make_node(op)
 end
 pratt.default_null_denotation = default_null_denotation
 
 -- Return the null denotation, the operator, and the right binding
 -- power of 'token' in 'environment'.
-local function null_denotation (token, environment)
+local function null_denotation (token, env)
    local op = operator(token, false)
    if op then
-      local context = null_context(environment)
+      local context = null_context(env)
       local opspec = context[op]
       if opspec then
-	 return opspec.denotation or environment.default_null_denotation,
+	 return opspec.denotation or env.default_null_denotation,
 	        op,
 	        opspec.right_binding_power or 0
       else
-	 return environment.default_null_denotation, op, 0
+	 return env.default_null_denotation, op, 0
       end
    else
-      return environment.default_null_denotation, token, 0
+      return env.default_null_denotation, token, 0
+   end
 end
 
 local function left_context (environment)
@@ -103,26 +106,24 @@ local function left_context (environment)
 end
 pratt.left_context = left_context
 
--- Return true if 'op' is defined as operator in 'context', false
--- otherwise.  
-local function is_operator (op, context)
-   return context[op] and true or false
-end
-pratt.is_operator = is_operator
-
 -- Return a replacement operator for 'opspec'
 local function replacement_for_op (op, opspec)
    return opspec.replacement or op
 end
+pratt.replacement_for_op = replacement_for_op
 
 -- Return the denotation , the (possibly replaced) operator, its
 -- specification, and the left binding power for 'token' as multiple
 -- values.
-local function operator_specification (token, environment)
+local function operator_specification (token, env, override)
    if not token then return nil, nil, nil, 0 end
+   override = override or {}
    local op = operator(token)
-   local context = left_context(environment)
-   local opspec = context[op]
+   local opspec = override[op]
+   if not opspec then
+      local context = left_context(environment)
+      opspec = context[op]
+   end
    if not opspec then 
       return nil, op, nil, 0
    else
@@ -134,126 +135,176 @@ local function operator_specification (token, environment)
 end
 pratt.operator_specification = operator_specification
 
-local function get_token (tokens, index)
+-- Return the left binding power of 'token' in 'environment'
+local function left_binding_power (token, env, override)
+   local den, op, opspec, lbp = 
+      operator_specification(token, env, override)
+   return lbp
+end
+pratt.left_binding_power = left_binding_power
+
+local function get_token (tokens, index, check_for_errors)
    local token = tokens[index]
-   if not token then
+   if not token and check_for_errors then
       error("No token at position " .. index .. ".") 
    end
    return token
 end
+pratt.get_token = get_token
 
 -- Parse 'tokens' with 'right_binding_power', starting at position
 -- 'index' in 'environment'.
-local function parse (right_binding_power, tokens, index, environment)
+local function parse (right_binding_power, tokens, index, env, override)
    local token = get_token(tokens, index)
-   local nud, op, rbp = null_denotation(token, environment)
-   local left, new_index = nud(op, rbp, tokens, index + 1, environment)
+   local nud, op, rbp = null_denotation(token, env)
+   local lhs, new_index = nud(op, rbp, tokens, index + 1, env, override)
    token = get_token(tokens, new_index)
-   local den, op, opspec, lbp = operator_specification(token, environment)
+   local den, op, opspec, lbp = operator_specification(token, env, override)
    while (token and right_binding_power < lbp) do
-      left, new_index = den(op, rbp, tokens, new_index, environment)
+      lhs, new_index = den(op, lhs, rbp, tokens, new_index, env, override)
       token = get_token(tokens, new_index)
-      den, op, opspec, lbp = operator_specification(token, environment)
+      den, op, opspec, lbp = operator_specification(token, env, override)
    end
-   return left, new_index
+   return lhs, new_index
 end
 pratt.parse = parse
 
-local function prefix_op (op, rbp, tokens, index, environment)
-   local rhs, new_index = parse(rbp, tokens, index, environment)
+local function prefix_op (op, rbp, tokens, index, env, override)
+   local rhs, new_index = parse(rbp, tokens, index, env, override)
    return environment.make_node{ op = op, rhs = rhs }, new_index
 end
 pratt.prefix_op = prefix_op
 
-local function postfix_op ()
+local function postfix_op (op, lhs, rbp, tokens, index, env, override)
+   return environment.make_node{ op = op, lhs = lhs }
 end
 pratt.postfix_op = postfix_op
 
-local function infix_left ()
+local function infix_left (op, lhs, rbp, tokens, index, env, override)
+   local rhs, new_index = parse(rbp, tokens, index, env, override)
+   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+          new_index
 end
 pratt.infix_left = infix_left
 
-local function infix_no ()
+local function infix_no (op, lhs, rbp, tokens, index, env, override)
+   local next_token = get_token(tokens, index)
+   if left_binding_power(token) == rbp then
+      error("Operator " .. tostring(op) .. " is not associative.")
+   end
+   local rhs, new_index = parse(rbp, tokens, index, env, override)
+   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+          new_index
 end
 pratt.infix_no = infix_no
 
-local function infix_right ()
+local function infix_right (op, lhs, rbp, tokens, index, env, override)
+   local rhs, new_index = parse(rbp - 0.5, tokens, index, env, override)
+   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+          new_index
 end
 pratt.infix_right = infix_right
 
+local function open_delimiter (separator, end_delimiter)
+   local function parse_delimiter_list (op, rbp, tokens, index, env, override)
+      override = { [separator] = {}}
+      local rhs, new_index = parse(rbp, tokens, index, env, override)
+      local token = get_token(tokens, new_index)
+      local new_op = operator(token)
+      if  new_op ~= end_delimiter then
+	 error("Found " .. new_op .. " when expecting " ..
+	       end_delimiter .. ".")
+      end
+      return rhs, new_index + 1
+   end
+   return parse_delimiter_list
+end
+pratt.open_delimiter = open_delimiter
+
+local function list_delimiter (separator, end_delimiter)
+   local function parse_delimiter_list (op, rbp, tokens, index, env, override)
+      override = { [','] = {}, ['|'] = {}}
+      -- TODO: same code as parse_delimiter_list in open_delimiter
+      local rhs, new_index = parse(rbp, tokens, index, env, override)
+      local token = get_token(tokens, new_index)
+      local new_op = operator(token)
+      if  new_op ~= end_delimiter then
+	 error("Found " .. new_op .. " when expecting " ..
+	       end_delimiter .. ".")
+      end
+      return rhs, new_index + 1
+   end
+   return parse_delimiter_list
+end
+pratt.list_delimiter = list_delimiter
 
 
 -- These definitions should actually go into the Prolog parser.
 local null_context = {
    null_context = null_context;
-   [':-']       = {{ left_binding_power = 100, 
-		     denotation = prefix_op }},
-   ['?-']       = {{ left_binding_power = 100, 
-		     denotation = prefix_op }},
-   ['(']        = {{ left_binding_power = 0,
-		     denotation = open_delimiter,
-		     separators = {','},
-		     closing_delimiters = {')'}}},
-   ['[']        = {{ left_binding_power = 0,
-		     denotation = open_delimiter,
-		     separators = {{',', false},
-				   {'|', 'rest'}},
-		     closing_delimiters = {']'}}},   
+   [':-']       = { left_binding_power = 100, 
+		    denotation = prefix_op },
+   ['?-']       = { left_binding_power = 100, 
+		    denotation = prefix_op },
+   ['(']        = { left_binding_power = 0,
+		    denotation = open_delimiter(',', ')'),
+		    separators = {','},
+		    closing_delimiters = {')'}},
+   ['[']        = { left_binding_power = 0,
+		    denotation = list_delimiter },   
 }
 
 local left_context = {
    left_context = left_context;
-   [':-']       = {{ left_binding_power = 0,
-		     denotation = infix_no }},
-   ['-->']      = {{ left_binding_power = 0,
-		     denotation = infix_no }},
-   [';']        = {{ left_binding_power = 100,
-		     denotation = infix_right,
-		     replacement = 'or' }},
-   ['or']       = {{ left_binding_power = 100,
-		     denotation = infix_right }},
-   ['->']       = {{ left_binding_power = 150,
-		     denotation = infix_right,
-		     replacement = 'implies' }},
-   ['implies']  = {{ left_binding_power = 150,
-		     denotation = infix_right }},
-   [',']        = {{ left_binding_power = 200,
-		     denotation = infix_right,
-		     replacement = 'and'}},
-   ['and']      = {{ left_binding_power = 200,
-		     denotation = infix_right }},
-   ['!']        =  {{ left_binding_power = 500,
-		      denotation = postfix_op },
-		    { left_binding_power = 200,
-		      denotation = infix_left }},
-   ['<']        = {{ left_binding_power = 500,
-		     denotation = infix_no }},
-   ['=<']       = {{ left_binding_power = 500,
-		     denotation = infix_no }},
-   ['<']        = {{ left_binding_power = 500,
-		     denotation = infix_no }},
-   ['<=']       = {{ left_binding_power = 500,
-		     denotation = infix_no }},
-   ['is']       = {{ left_binding_power = 500,
-		     denotation = infix_no }},
-   [':']        = {{ left_binding_power = 600,
-		     denotation = infix_no }},
-   ['+']        = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['-']        = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['xor']      = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['*']        = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['/']        = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['mod']      = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['rem']      = {{ left_binding_power = 700,
-		     denotation = infix_left }},
-   ['^']        = {{ left_binding_power = 700,
-		     denotation = infix_right }},
+   [':-']       = { left_binding_power = 0,
+		    denotation = infix_no },
+   ['-->']      = { left_binding_power = 0,
+		    denotation = infix_no },
+   [';']        = { left_binding_power = 100,
+		    denotation = infix_right,
+		    replacement = 'or' },
+   ['or']       = { left_binding_power = 100,
+		    denotation = infix_right },
+   ['->']       = { left_binding_power = 150,
+		    denotation = infix_right,
+		    replacement = 'implies' },
+   ['implies']  = { left_binding_power = 150,
+		    denotation = infix_right },
+   [',']        = { left_binding_power = 200,
+		    denotation = infix_right,
+		    replacement = 'and'},
+   ['and']      = { left_binding_power = 200,
+		    denotation = infix_right },
+   ['!']        =  { left_binding_power = 500,
+		     denotation = postfix_op },
+   ['<']        = { left_binding_power = 500,
+		    denotation = infix_no },
+   ['=<']       = { left_binding_power = 500,
+		    denotation = infix_no },
+   ['<']        = { left_binding_power = 500,
+		    denotation = infix_no },
+   ['<=']       = { left_binding_power = 500,
+		    denotation = infix_no },
+   ['is']       = { left_binding_power = 500,
+		    denotation = infix_no },
+   [':']        = { left_binding_power = 600,
+		    denotation = infix_no },
+   ['+']        = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['-']        = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['xor']      = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['*']        = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['/']        = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['mod']      = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['rem']      = { left_binding_power = 700,
+		    denotation = infix_left },
+   ['^']        = { left_binding_power = 700,
+		    denotation = infix_right },
 }
 
 local environment = { null_context = null_context,
