@@ -112,7 +112,9 @@ local lexer_table = {
 	   V'operator_start_char' * V'operator_char'^0,
 	  make_simple_node) *
       V'ws';
-   atom_paren = V'ws' * S'()[]{}' * V'ws';
+   atom_paren = V'ws' * 
+      node("atom", S'()[]{}', make_simple_node) * 
+      V'ws';
    quoted_atom = V'ws' * P'\'' *
       node("atom", 
 	   (P'\\' * P(1) + (1 - P'\''))^0,

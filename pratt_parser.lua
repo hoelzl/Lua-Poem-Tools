@@ -237,7 +237,7 @@ pratt.infix_left = infix_left
 local function infix_no (rbp, op, lhs, token, tokens, index, env, override)
    local den, op, opspec, lbp = operator_specification(token, env, override)
    local next_token = get_token(tokens, index)
-   if left_binding_power(token) == rbp then
+   if left_binding_power(token, env, override) == rbp then
       error("Operator " .. tostring(op) .. " is not associative.")
    end
    local rhs, new_index = parse(lbp, tokens, index, env, override)
@@ -283,11 +283,17 @@ local function flatten_arg_cons (cons)
 end
 pratt.flatten_arg_cons = flatten_arg_cons
 
+local function make_compound_term (functor, args, env)
+   return env.make_node{ op = 'compound-term',
+			 functor = functor,
+			 args = args}
+end
+
 local function collect_arg (rbp, op, lhs, token, tokens, index, env, override)
    local next_op = operator(get_token(tokens, new_index))
    -- print("collect_arg: next_op = ", next_op)
    if next_op == ')' then
-      return env.make_node{ op = 'apply', fun = lhs, args = {}}, index
+      return make_compound_term(lhs, {}, env), index
    end
    local arg, new_index = parse(0, tokens, index, env, override)
    -- print("collect_arg: arg = ", arg)
@@ -299,18 +305,16 @@ local function arglist (rbp, op, lhs, token, tokens, index, env, override)
 				    denotation = collect_arg }}
    local next_op = operator(get_token(tokens, index))
    if next_op == ')' then
-      -- print("arglist: end delimiter at index ", index)
-      return env.make_node{ op = 'apply', fun = lhs, args = {}}, index + 1
+      return make_compound_term(lhs, {}, env), index + 1
    end
    local args, new_index = parse(0, tokens, index, env, new_override)
-   -- print("arglist: args = ", args)
    next_op = operator(get_token(tokens, new_index))
    if next_op ~= ')' then
       error("Expected ')', got " .. table_tostring(next_op) ..
 	    " at " .. error_position_string(new_index))
    end
    args = flatten_arg_cons(args)
-   return env.make_node{op = 'apply', fun = lhs, args = args}, new_index + 1
+   return make_compound_term(lhs, args, env), new_index + 1
 end
 
 
@@ -335,14 +339,16 @@ pratt.list_delimiter = list_delimiter
 -- These definitions should actually go into the Prolog parser.
 local null_context = {
    null_context = null_context;
-   [':-']       = { right_binding_power = 100, 
-		    denotation = prefix_op },
-   ['?-']       = { right_binding_power = 100, 
-		    denotation = prefix_op },
    ['(']        = { right_binding_power = 0,
 		    denotation = open_delimiter(')') },
    ['[']        = { right_binding_power = 0,
 		    denotation = list_delimiter }, 
+   [':-']       = { right_binding_power = 100, 
+		    denotation = prefix_op },
+   ['?-']       = { right_binding_power = 100, 
+		    denotation = prefix_op },
+   ['-']        = { right_binding_power = 500,
+		    denotation = prefix_op },
 }
 
 local left_context = {

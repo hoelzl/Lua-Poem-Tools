@@ -1,6 +1,7 @@
 -- Tests of the Pratt parser.
 --
 local utils = require 'utilities'
+local lex = require 'basic_lexer'
 local pratt = require 'pratt_parser'
 local test = require 'lunatest'
 
@@ -20,6 +21,7 @@ local operator_specification = pratt.operator_specification
 local delete_op = pratt.delete_op
 local is_arg_cons, flatten_arg_cons = 
    pratt.is_arg_cons, pratt.flatten_arg_cons
+local parse = pratt.parse
 
 local assert_node = utils.assert_node
 local set_node_metatable, set_node_metatable_recursively =
@@ -33,7 +35,7 @@ local function assert_pratt_parse (expected, tokens, rbp, env, override)
    env = env or pratt.default_environment
    override = override or {}
    expected = set_node_metatable_recursively(expected)
-   local result = pratt.parse(rbp, tokens, 1, env, override)
+   local result = parse(rbp, tokens, 1, env, override)
    set_node_metatable_recursively(result)
    assert_equal(getmetatable(expected), getmetatable(result),
 	       "Metatables do not match for " .. 
@@ -41,6 +43,21 @@ local function assert_pratt_parse (expected, tokens, rbp, env, override)
 		  ", " .. 
 		  utils.table_tostring(expected) .. 
 		  ".")
+   assert_equal(expected, result);
+end
+
+local function assert_lex_parse (code, expected, lexer, rbp, env, override)
+   lexer = lexer or lex.lexer
+   rbp = rbp or 0
+   env = env or pratt.default_environment
+   override = override or {}
+   expected = set_node_metatable_recursively(expected)
+   local lex_result = lexer:match(code)
+   -- print_table(lex_result)
+   local result = parse(rbp, lex_result, 1, env, override)
+   set_node_metatable_recursively(result)
+   assert_equal(getmetatable(expected), getmetatable(result),
+	       "Metatables do not match for " .. code .. ".")
    assert_equal(expected, result);
 end
 
@@ -402,13 +419,13 @@ end
 
 function test_function_parse_1 ()
    local tokens = {{ name = 'f' }, { name = '(' }, { name = ')'}}
-   local expected = { op = "apply", fun = tokens[1], args = {}}
+   local expected = { op = "compound-term", functor = tokens[1], args = {}}
    assert_pratt_parse(expected, tokens)
 end
 
 function test_function_parse_2 ()
    local tokens = {{ name = 'f' }, { name = '(' }, { '1' }, { name = ')'}}
-   local expected = { op = "apply", fun = tokens[1], args = {{'1'}}}
+   local expected = { op = "compound-term", functor = tokens[1], args = {{'1'}}}
    assert_pratt_parse(expected, tokens)
 end
 
@@ -417,7 +434,7 @@ function test_function_parse_3 ()
 		   { '1' }, { name = ',' },
 		   { '2' },
 		   { name = ')'}}
-   local expected = { op = "apply", fun = tokens[1],
+   local expected = { op = "compound-term", functor = tokens[1],
 		      args = {{'1'}, {'2'}}}
    assert_pratt_parse(expected, tokens)
 end
@@ -427,7 +444,319 @@ function test_function_parse_4 ()
 		   { '1' }, { name = ',' },
 		   { '2' }, { name = ',' },
 		   { name = ')'}}
-   local expected = { op = "apply", fun = tokens[1],
+   local expected = { op = "compound-term", functor = tokens[1],
 		      args = {{'1'}, {'2'}}}
    assert_error(function () pratt.parse(0, tokens, 1, default_environment, {}) end)
+end
+
+function test_function_parse_5 ()
+   local tokens = {{ name = 'f' }, { name = '(' }, 
+		   { '1' }, { name = ',' },
+		   { name = 'g' }, { name = '(' },
+		   { 'a' }, { name = ',' }, { 'b' },
+		   { name = ')' }, { name = ',' },
+		   { '2' }, { name = ',' }, { '3' },
+		   { name = ')'}}
+   local expected = {op = "compound-term",
+		     functor = {name = "f"}, 
+		     args = {{"1"},
+			     {op = "compound-term", 
+			      functor = {name = "g"},
+			      args = {{"a"}, {"b"}}},
+			     {"2"},
+			     {"3"}}}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_lexer_and_parser_1 ()
+   local code = "1"
+   local expected = {type = "number", pos = 1, name = "1"}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_2 ()
+   local code = "1 + 2"
+   local expected = {op = "+",
+		     lhs = {type = "number", pos = 1, name = "1"},
+		     rhs = {type = "number", pos = 5, name = "2"}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_3 ()
+   local code = "1 + 2 * 3"
+   local expected = {op = "+",
+		     lhs = {type = "number", pos = 1, name = "1"},
+		     rhs = {op = "*",
+			    lhs = {type = "number", pos = 5, name = "2"},
+			    rhs = {type = "number", pos = 9, name = "3"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_4 ()
+   local code = "1 * (2 + 3 + 4)"
+   local expected = {op = "*",
+		     lhs = {type = "number", pos = 1, name = "1"},
+		     rhs = {op = "+",
+			    lhs = {op = "+",
+				   lhs = {type = "number", pos = 6, name = "2"},
+				   rhs = {type = "number", pos = 10, name = "3"}},
+			    rhs = {type = "number", pos = 14, name = "4"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_5 ()
+   local code = "7 * (8 + 9)"
+   local expected = {op = "*",
+		     lhs = {type = "number", pos = 1, name = "7"},
+		     rhs = {op = "+",
+			    lhs = {type = "number", pos = 6, name = "8"},
+			    rhs = {type = "number", pos = 10, name = "9"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_6 ()
+   local code = "7 ^ (8 + 9)"
+   local expected = {op = "^",
+		     lhs = {type = "number", pos = 1, name = "7"},
+		     rhs = {op = "+",
+			    lhs = {type = "number", pos = 6, name = "8"},
+			    rhs = {type = "number", pos = 10, name = "9"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_6 ()
+   local code = "1 * (2 + 3 + 4) + 5 * 6 ^ 7 ^ (8 + 9)"
+   local expected = {op = "+",
+		     lhs = {op = "*",
+			    lhs = {type = "number", pos = 1, name = "1"},
+			    rhs = {op = "+",
+				   lhs = {op = "+",
+					  lhs = {type = "number", pos = 6, name = "2"},
+					  rhs = {type = "number", pos = 10, name = "3"}},
+				   rhs = {type = "number", pos = 14, name = "4"}}},
+		     rhs = {op = "*",
+			    lhs = {type = "number", pos = 19, name = "5"},
+			    rhs = {op = "^",
+				   lhs = {type = "number", pos = 23, name = "6"}, 
+				   rhs = {op = "^",
+					  lhs = {type = "number", pos = 27, name = "7"},
+					  rhs = {op = "+",
+						 lhs = {type = "number", pos = 32, name = "8"},
+						 rhs = {type = "number", pos = 36, name = "9"}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_1 ()
+   local code = "f()"
+   local expected = {op = "compound-term", 
+		     functor = {type = "atom", pos = 1, name = "f"},
+		     args = {}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_2 ()
+   local code = "f(1, x, X)"
+   local expected = {op = "compound-term", 
+		     functor = {type = "atom", pos = 1, name = "f"}, 
+		     args = {{type = "number", pos = 3, name = "1"}, 
+			     {type = "atom", pos = 6, name = "x"},
+			     {type = "variable", pos = 9, name = "X"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_3 ()
+   local code = "f(g(x), h(Y, Z))"
+   local expected = {op = "compound-term", 
+		     functor = {type = "atom", pos = 1, name = "f"},
+		     args = {{op = "compound-term", 
+			      functor = {type = "atom", pos = 3, name = "g"},
+			      args = {{type = "atom", pos = 5, name = "x"}}},
+			     {op = "compound-term", 
+			      functor = {type = "atom", pos = 9, name = "h"},
+			      args = {{type = "variable", pos = 11, name = "Y"},
+				      {type = "variable", pos = 14, name = "Z"}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_4 ()
+   local code = "(f())"
+   local expected = {op = "compound-term", 
+		     functor = {type = "atom", pos = 2, name = "f"},
+		     args = {}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_5 ()
+   local code = "f()()"
+   local expected = {op = "compound-term",
+		     functor = {op = "compound-term",
+			    functor = {type = "atom", pos = 1, name = "f"}, 
+			    args = {}}, 
+		     args = {}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_6 ()
+   local code = "f(g(X))(1 + 2 * 3)"
+   local expected = {op = "compound-term", 
+		     functor = {op = "compound-term", 
+			    functor = {type = "atom", pos = 1, name = "f"},
+			    args = {
+			       {op = "compound-term", 
+				functor = {type = "atom", 
+				       pos = 3, name = "g"},
+				args = {{type = "variable", pos = 5, name = "X"}}}}},
+		     args = {{op = "+",
+			      lhs = {type = "number", pos = 9, name = "1"},
+			      rhs = {op = "*",
+				     lhs = {type = "number", pos = 13, name = "2"},
+				     rhs = {type = "number", pos = 17, name = "3"}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_7 ()
+   local code = "f(g(X)) * (1 + 2 * 3)"
+   local expected = {op = "*", 
+		     rhs = {op = "+",
+			    lhs = {type = "number", pos = 12, name = "1"},
+			    rhs = {op = "*",
+				   lhs = {type = "number", pos = 16, name = "2"},
+				   rhs = {type = "number", pos = 20, name = "3"}}},
+		     lhs = {op = "compound-term", 
+			    functor = {type = "atom", pos = 1, name = "f"},
+			    args = {
+			       {op = "compound-term",
+				functor = {type = "atom", pos = 3, name = "g"},
+				args = {{type = "variable", pos = 5, name = "X"}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_8 ()
+   local code = "f(g(X)) * -(1 + 2 * 3)"
+   local expected = {op = "*",
+		     lhs = {
+			op = "compound-term", 
+			functor = {type = "atom", pos = 1, name = "f"},
+			args = {
+			   {op = "compound-term", 
+			    functor = {type = "atom", pos = 3, name = "g"},
+			    args = {{type = "variable", pos = 5, name = "X"}}}}},
+		     rhs = {
+			op = "-", 
+			rhs = {
+			   op = "+",
+			   lhs = {type = "number", pos = 13, name = "1"},
+			   rhs = {
+			      op = "*",
+			      lhs = {type = "number", pos = 17, name = "2"},
+			      rhs = {type = "number", pos = 21, name = "3"}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_9 ()
+   local code = "f(g(X)) * - - - -(1 + - 2)"
+   local expected = {
+      op = "*",
+      lhs = {
+	 op = "compound-term", 
+	 functor = {type = "atom", pos = 1, name = "f"},
+	 args = {
+	    {op = "compound-term", 
+	     functor = {type = "atom", pos = 3, name = "g"},
+	     args = {{type = "variable", pos = 5, name = "X"}}}}}, 
+      rhs = {
+	 op = "-", 
+	 rhs = {
+	    op = "-", 
+	    rhs = {
+	       op = "-", 
+	       rhs = {
+		  op = "-", 
+		  rhs = {
+		     op = "+",
+		     lhs = {type = "number", pos = 19, name = "1"},
+		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_10 ()
+   local code = "f(g(X)) - - - - -(1 + - 2)"
+   local expected = {
+      op = "-",
+      lhs = {
+	 op = "compound-term", 
+	 functor = {type = "atom", pos = 1, name = "f"},
+	 args = {
+	    {op = "compound-term", 
+	     functor = {type = "atom", pos = 3, name = "g"},
+	     args = {{type = "variable", pos = 5, name = "X"}}}}}, 
+      rhs = {
+	 op = "-", 
+	 rhs = {
+	    op = "-", 
+	    rhs = {
+	       op = "-", 
+	       rhs = {
+		  op = "-", 
+		  rhs = {
+		     op = "+",
+		     lhs = {type = "number", pos = 19, name = "1"},
+		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_fun_11 ()
+   local code = "f(g(X)) + - - - +(1 + - 2)"
+   local expected = {
+      op = "+", 
+      rhs = {
+	 op = "-", 
+	 rhs = {
+	    op = "-", 
+	    rhs = {
+	       op = "-", 
+	       rhs = {
+		  op = "compound-term", 
+		  functor = {type = "atom", pos = 17, name = "+"},
+		  args = {
+		     {op = "+",
+		      lhs = {type = "number", pos = 19, name = "1"},
+		      rhs = {type = "number", pos = 23, name = "- 2"}}}}}}},
+      lhs = {op = "compound-term", 
+	     functor = {type = "atom", pos = 1, name = "f"},
+	     args = {{op = "compound-term", 
+		      functor = {type = "atom", pos = 3, name = "g"},
+		      args = {{type = "variable", pos = 5, name = "X"}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_clause_1 ()
+   local code = "f(X, Y)."
+   local expected = {op = "compound-term", 
+		     functor = {type = "atom", pos = 1, name = "f"},
+		     args = {{type = "variable", pos = 3, name = "X"},
+			     {type = "variable", pos = 6, name = "Y"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_clause_2 ()
+   local code = "f(X, Y) :- g(X, Z), h(Z, Y)."
+   local expected = {
+      op = ":-",
+      lhs = {op = "compound-term", 
+	     functor = {type = "atom", pos = 1, name = "f"},
+	     args = {{type = "variable", pos = 3, name = "X"},
+		     {type = "variable", pos = 6, name = "Y"}}},
+      rhs = {
+	 op = "and",
+	 lhs = {op = "compound-term",
+		functor = {type = "atom", pos = 12, name = "g"},
+		args = {{type = "variable", pos = 14, name = "X"}, 
+			{type = "variable", pos = 17, name = "Z"}}},
+	 rhs = {
+	    op = "compound-term", 
+	    functor = {type = "atom", pos = 21, name = "h"},
+	    args = {{type = "variable", pos = 23, name = "Z"},
+		    {type = "variable", pos = 26, name = "Y"}}}}}
+   assert_lex_parse(code, expected)
 end
