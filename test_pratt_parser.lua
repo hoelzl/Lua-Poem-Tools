@@ -320,3 +320,33 @@ function test_paren_parse_3 ()
 		   { name = '*' }} 
    assert_error(function () pratt.parse(0, tokens, 1, default_environment, {}) end)
 end
+
+function test_paren_parse_4 ()
+   local tokens = {{ name = '(' }, { '1' }, { name = '+' }, { name = ')' },
+		   { '2', pos = 1234 }, { name = ')' },
+		   { name = '*' }, { '3' }} 
+   assert_error(function () pratt.parse(0, tokens, 1, default_environment, {}) end)
+end
+
+function test_paren_parse_5 ()
+   local tokens = {{ name = '(' }, { name = '(' }, { name = '(' },
+		   { '1' }, { name = ')' },
+		   { name = '+' }, { '2' }, { name = ')' }, { name = ')' }}
+   local expected = { op = '+',
+		      lhs = { '1' },
+		      rhs = { '2' } }
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_6 ()
+   local tokens = {{ name = '(' }, { name = '(' }, { name = '(' }, { name = '(' },
+		   { '1' }, { name = ')' }, { name = '+' }, { '2' }, { name = ')' },
+		   { name = ')' }, { name = ')' },
+		   { name = '*' }, { '3' }}
+   local expected = { op = '*',
+		      lhs = { op = '+',
+			      lhs = { '1' },
+			      rhs = { '2'} },
+		      rhs = { '3' }}
+   assert_pratt_parse(expected, tokens)
+end
