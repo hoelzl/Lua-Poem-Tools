@@ -18,8 +18,13 @@ local open_delimiter, list_delimiter =
    pratt.open_delimiter, pratt.list_delimiter
 local operator_specification = pratt.operator_specification
 local delete_op = pratt.delete_op
+local is_arg_cons, flatten_arg_cons = 
+   pratt.is_arg_cons, pratt.flatten_arg_cons
 
 local assert_node = utils.assert_node
+local set_node_metatable, set_node_metatable_recursively =
+   utils.set_node_metatable, utils.set_node_metatable_recursively
+local print_table = utils.print_table
 
 module('test_pratt_parser', package.seeall)
 
@@ -27,8 +32,9 @@ local function assert_pratt_parse (expected, tokens, rbp, env, override)
    rbp = rbp or 0
    env = env or pratt.default_environment
    override = override or {}
-   expected = utils.set_node_metatable_recursively(expected)
+   expected = set_node_metatable_recursively(expected)
    local result = pratt.parse(rbp, tokens, 1, env, override)
+   set_node_metatable_recursively(result)
    assert_equal(getmetatable(expected), getmetatable(result),
 	       "Metatables do not match for " .. 
 		  utils.table_tostring(result) ..
@@ -37,7 +43,6 @@ local function assert_pratt_parse (expected, tokens, rbp, env, override)
 		  ".")
    assert_equal(expected, result);
 end
-
 
 function test_operator ()
    assert_equal('foo', operator { name = 'foo'})
@@ -117,7 +122,7 @@ function test_op_spec_4 ()
    assert_equal(infix_right, den)
    assert_equal('and', op)
    assert_table(opspec)
-   assert_equal(200, lbp)
+   assert_equal(300, lbp)
 end
 
 function test_op_spec_5 ()
@@ -349,4 +354,80 @@ function test_paren_parse_6 ()
 			      rhs = { '2'} },
 		      rhs = { '3' }}
    assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_7 ()
+   local tokens = {{ '1' }, { name = '+' }, { name = '(' },  { '2' },
+		   { name = '-' }, { '3' }, { name = ')' }} 
+   local expected = { op = '+',
+		      lhs = { '1' },
+		      rhs = { op = '-',
+			      lhs = { '2' },
+			      rhs = { '3' } }}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_8 ()
+   local tokens = {{ '1' }, { name = '*' }, { name = '(' },  { '2' },
+		   { name = '-' }, { '3' }, { name = ')' }} 
+   local expected = { op = '*',
+		      lhs = { '1' },
+		      rhs = { op = '-',
+			      lhs = { '2' },
+			      rhs = { '3' } }}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_is_arg_cons_1 ()
+   assert_true(is_arg_cons{'cons-arg', 1, 2})
+   assert_false(is_arg_cons{ name = 'foo' })
+   assert_false(is_arg_cons{})
+end
+
+function test_flatten_arg_cons_1 ()
+   local expected = set_node_metatable_recursively({{}})
+   local arg_cons = {}
+   local result = flatten_arg_cons(arg_cons)
+   result = set_node_metatable_recursively(result)
+   assert_equal(expected, result)
+end
+
+function test_flatten_arg_cons_2 ()
+   local expected = set_node_metatable_recursively({1, 2, 3})
+   local arg_cons = {'cons-arg', 1, {'cons-arg', 2, 3}}
+   local result = flatten_arg_cons(arg_cons)
+   result = set_node_metatable_recursively(result)
+   assert_equal(expected, result)
+end
+
+function test_function_parse_1 ()
+   local tokens = {{ name = 'f' }, { name = '(' }, { name = ')'}}
+   local expected = { op = "apply", fun = tokens[1], args = {}}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_function_parse_2 ()
+   local tokens = {{ name = 'f' }, { name = '(' }, { '1' }, { name = ')'}}
+   local expected = { op = "apply", fun = tokens[1], args = {{'1'}}}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_function_parse_3 ()
+   local tokens = {{ name = 'f' }, { name = '(' }, 
+		   { '1' }, { name = ',' },
+		   { '2' },
+		   { name = ')'}}
+   local expected = { op = "apply", fun = tokens[1],
+		      args = {{'1'}, {'2'}}}
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_function_parse_4 ()
+   local tokens = {{ name = 'f' }, { name = '(' }, 
+		   { '1' }, { name = ',' },
+		   { '2' }, { name = ',' },
+		   { name = ')'}}
+   local expected = { op = "apply", fun = tokens[1],
+		      args = {{'1'}, {'2'}}}
+   assert_error(function () pratt.parse(0, tokens, 1, default_environment, {}) end)
 end

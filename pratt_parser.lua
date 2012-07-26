@@ -36,6 +36,8 @@ local assert, error, print, tostring, type =
    assert, error, print, tostring, type
 local _G, io, table, string = _G, io, table, string
 
+local table_tostring = utils.table_tostring
+
 module('pratt_parser')
 
 local pratt = _G.pratt_parser
@@ -177,6 +179,14 @@ pratt.get_token = get_token
 
 local last_token
 
+local function error_position_string (index)
+   if last_token and type(last_token) == 'table' and last_token.pos then
+      return "position " .. tostring(last_token.pos)
+   else
+      return "index " .. tostring(index)
+   end
+end
+
 -- Parse 'tokens' with 'right_binding_power', starting at position
 -- 'index' in 'environment'.
 local function parse (right_binding_power, tokens, index, env, override)
@@ -199,15 +209,8 @@ local function parse (right_binding_power, tokens, index, env, override)
       end
       return lhs, new_index
    else
-      if last_token and type(last_token) == 'table' and last_token.pos then
-	 error("Cannot parse input starting at position " ..
-	       tostring(last_token.pos) .. ".")
-      else
-	 print(last_token)
-	 error("Cannot parse tokens starting at index " .. 
-	       tostring(index) ..
-	       ".")
-      end
+      error("Cannot parse input starting at " .. 
+	    error_position_string(index) .. ".")
    end
 end
 pratt.parse = parse
@@ -256,7 +259,7 @@ local function open_delimiter (end_delimiter)
       local arg, new_index = parse(0, tokens, index, env, {})
       local next_op = operator(get_token(tokens, new_index))
       if next_op ~= end_delimiter then
-	 error("Expected " .. end_delimiter .. ", got " .. end_del)
+	 error("Expected " .. end_delimiter .. ", got " .. next_op)
       end
       return arg, new_index + 1
    end
@@ -264,16 +267,50 @@ local function open_delimiter (end_delimiter)
 end
 pratt.open_delimiter = open_delimiter
 
-local function arglist (rbp, op, token, tokens, index, env, override)
-   override = { [','] = { --[[ TODO...]] }}
-   local rhs, new_index = parse(rbp, tokens, index, env, override)
-   local token = get_token(tokens, new_index)
-   local new_op = operator(token)
-   if  new_op ~= end_delimiter then
-      error("Found " .. new_op .. " when expecting " ..
-	    end_delimiter .. ".")
+local function is_arg_cons (cons)
+   return cons and type(cons) == 'table' and cons[1] == 'cons-arg'
+end
+pratt.is_arg_cons = is_arg_cons
+
+local function flatten_arg_cons (cons)
+   local result = {}
+   while is_arg_cons(cons) do
+      result[#result + 1] = cons[2]
+      cons = cons[3]
    end
-   return rhs, new_index + 1
+   result[#result + 1] = cons
+   return result
+end
+pratt.flatten_arg_cons = flatten_arg_cons
+
+local function collect_arg (rbp, op, lhs, token, tokens, index, env, override)
+   local next_op = operator(get_token(tokens, new_index))
+   -- print("collect_arg: next_op = ", next_op)
+   if next_op == ')' then
+      return env.make_node{ op = 'apply', fun = lhs, args = {}}, index
+   end
+   local arg, new_index = parse(0, tokens, index, env, override)
+   -- print("collect_arg: arg = ", arg)
+   return {'cons-arg', lhs, arg}, new_index
+end
+
+local function arglist (rbp, op, lhs, token, tokens, index, env, override)
+   local new_override = { [','] = { left_binding_power = 100,
+				    denotation = collect_arg }}
+   local next_op = operator(get_token(tokens, index))
+   if next_op == ')' then
+      -- print("arglist: end delimiter at index ", index)
+      return env.make_node{ op = 'apply', fun = lhs, args = {}}, index + 1
+   end
+   local args, new_index = parse(0, tokens, index, env, new_override)
+   -- print("arglist: args = ", args)
+   next_op = operator(get_token(tokens, new_index))
+   if next_op ~= ')' then
+      error("Expected ')', got " .. table_tostring(next_op) ..
+	    " at " .. error_position_string(new_index))
+   end
+   args = flatten_arg_cons(args)
+   return env.make_node{op = 'apply', fun = lhs, args = args}, new_index + 1
 end
 
 
@@ -310,24 +347,26 @@ local null_context = {
 
 local left_context = {
    left_context = left_context;
-   [':-']       = { left_binding_power = 0,
+   ['(']        = { left_binding_power = 10000,
+		    denotation = arglist },
+   [':-']       = { left_binding_power = 100,
 		    denotation = infix_no },
-   ['-->']      = { left_binding_power = 0,
+   ['-->']      = { left_binding_power = 100,
 		    denotation = infix_no },
-   [';']        = { left_binding_power = 100,
+   [';']        = { left_binding_power = 200,
 		    denotation = infix_right,
 		    replacement = 'or' },
-   ['or']       = { left_binding_power = 100,
+   ['or']       = { left_binding_power = 200,
 		    denotation = infix_right },
-   ['->']       = { left_binding_power = 150,
+   ['->']       = { left_binding_power = 250,
 		    denotation = infix_right,
 		    replacement = 'implies' },
-   ['implies']  = { left_binding_power = 150,
+   ['implies']  = { left_binding_power = 250,
 		    denotation = infix_right },
-   [',']        = { left_binding_power = 200,
+   [',']        = { left_binding_power = 300,
 		    denotation = infix_right,
 		    replacement = 'and'},
-   ['and']      = { left_binding_power = 200,
+   ['and']      = { left_binding_power = 300,
 		    denotation = infix_right },
    ['!']        =  { left_binding_power = 500,
 		     denotation = postfix_op },
