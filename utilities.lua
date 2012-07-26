@@ -106,6 +106,12 @@ local function merge (...)
 end
 utilities.merge = merge
 
+-- Cloning a table is the same as merging it non-destructively.
+local clone = merge
+utilities.clone = merge
+
+-- Returns a slice of the table.  If 'end_index' is not present it
+-- defaults to the length of the table.
 local function slice (tab, start_index, end_index)
    local result = {}
    local n = #tab
@@ -158,11 +164,15 @@ local function equal (t1, t2)
 end
 utilities.equal = equal
 
+-- A metatable that compares tables by element
 local equality_metatable = {
    __eq = equal
 }
 utilities.equality_metatable = equality_metatable
 
+-- Sets the metatable of 'tab' to one that has an __eq attribute which
+-- compares by element.  Tries to disturb existing metatables as
+-- little as possible.
 local function set_equality_metatable (tab, error_if_present)
    if (type(tab) == "table") then
       local mt = getmetatable(tab)
@@ -215,6 +225,12 @@ local function set_node_metatable_recursively (node)
 end
 utilities.set_node_metatable_recursively = set_node_metatable_recursively
 
+local function make_node (table)
+   table = table or {}   
+   return set_node_metatable(node)
+end
+utilities.make_node = make_node
+
 -- Utilities for testing
 --
 local function assert_table_equal (tab1, tab2, message)
@@ -222,14 +238,27 @@ local function assert_table_equal (tab1, tab2, message)
 end
 utilities.assert_table_equal = assert_table_equal
 
-local function assert_node(lexer, code, parse_tree)
+local function assert_node (lexer, code, expected)
    -- Recursively set all metatables to ensure the correct comparison
+   -- and to obtain a helpful printout if the test fails.
    local result = set_node_metatable_recursively(lexer:match(code))
-   parse_tree = set_node_metatable_recursively(parse_tree)
-   assert_equal(getmetatable(parse_tree), getmetatable(result),
+   expected = set_node_metatable_recursively(expected)
+   assert_equal(getmetatable(expected), getmetatable(result),
 	       "Metatables do not match for " .. code .. ".")
-   assert_equal(parse_tree, result);
-   return result
+   assert_equal(expected, result);
 end
 utilities.assert_node = assert_node
 
+local function assert_pratt_parse (tokens, expected, rbp, env)
+   rbp = rbp or 0
+   env = env or pratt.default_environment
+   expected = set_node_metatable_recursively(expected)
+   local result = pratt.parse(tokens, 1, rbp, env)
+   assert_equal(getmetatable(expected), getmetatable(result),
+	       "Metatables do not match for " .. 
+		  utils.table_tostring(result) ..
+		  ", " .. 
+		  utils.table_tostring(expected) .. 
+		  ".")
+   assert_equal(expected, result);
+end
