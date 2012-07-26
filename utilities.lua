@@ -1,7 +1,8 @@
 -- Some generally useful utilities.
 --
 
-require 'strict'
+-- lunatest chokes on this
+-- require 'strict'
 lunatest = require 'lunatest'
 
 module('utilities', package.seeall)

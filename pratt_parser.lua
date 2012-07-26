@@ -30,7 +30,8 @@
 -- opspec = operator specification, a table containing all pertinent
 --          information about an operator in a certain environment
 
-require 'strict'
+-- lunatest chokes on this...
+-- require 'strict'
 local utils = require 'utilities'
 local assert, error, print, tostring, type = 
    assert, error, print, tostring, type
@@ -288,6 +289,7 @@ local function make_compound_term (functor, args, env)
 			 functor = functor,
 			 args = args}
 end
+pratt.make_compound_term = make_compound_term
 
 local function collect_arg (rbp, op, lhs, token, tokens, index, env, override)
    local next_op = operator(get_token(tokens, new_index))
@@ -299,6 +301,7 @@ local function collect_arg (rbp, op, lhs, token, tokens, index, env, override)
    -- print("collect_arg: arg = ", arg)
    return {'cons-arg', lhs, arg}, new_index
 end
+pratt.collect_arg = collect_arg
 
 local function arglist (rbp, op, lhs, token, tokens, index, env, override)
    local new_override = { [','] = { left_binding_power = 100,
@@ -316,25 +319,31 @@ local function arglist (rbp, op, lhs, token, tokens, index, env, override)
    args = flatten_arg_cons(args)
    return make_compound_term(lhs, args, env), new_index + 1
 end
+pratt.arglist = arglist
 
-
-local function list_delimiter (separator, end_delimiter)
-   local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
-      override = { [','] = {}, ['|'] = {}}
-      -- TODO: same code as parse_delimiter_list in open_delimiter
-      local rhs, new_index = parse(rbp, tokens, index, env, override)
-      local token = get_token(tokens, new_index)
-      local new_op = operator(token)
-      if  new_op ~= end_delimiter then
-	 error("Found " .. new_op .. " when expecting " ..
-	       end_delimiter .. ".")
-      end
-      return rhs, new_index + 1
+local function list_delimiter (rbp, op, token, tokens, index, env, override)
+   local new_override = { [','] = { left_binding_power = 100,
+				    denotation = collect_arg }}
+   local next_op = operator(get_token(tokens, index))
+   if next_op == ']' then
+      return env.make_node{op = 'list', args = {}}
    end
-   return parse_delimiter_list
+   local args, new_index = parse(0, tokens, index, env, new_override)
+   next_op = operator(get_token(tokens, new_index))
+   local rest_arg = nil
+   if next_op == '|' then
+      rest_arg, new_index = parse(0, tokens, new_index + 1, env, {})
+      next_op = operator(get_token(tokens, new_index))
+   end 
+   args = flatten_arg_cons(args)
+   if next_op == ']' then
+      return env.make_node{op = 'list', args = args, rest_arg = rest_arg},
+      new_index + 1
+   else
+      error("Expected ]" .. ", got " .. tostring(next_op))
+   end
 end
 pratt.list_delimiter = list_delimiter
-
 
 -- These definitions should actually go into the Prolog parser.
 local null_context = {

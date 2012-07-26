@@ -524,7 +524,7 @@ function test_lexer_and_parser_6 ()
    assert_lex_parse(code, expected)
 end
 
-function test_lexer_and_parser_6 ()
+function test_lexer_and_parser_7 ()
    local code = "1 * (2 + 3 + 4) + 5 * 6 ^ 7 ^ (8 + 9)"
    local expected = {op = "+",
 		     lhs = {op = "*",
@@ -543,6 +543,49 @@ function test_lexer_and_parser_6 ()
 					  rhs = {op = "+",
 						 lhs = {type = "number", pos = 32, name = "8"},
 						 rhs = {type = "number", pos = 36, name = "9"}}}}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_8 ()
+   local code = "[]"
+   local expected = {op = "list", args = {}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_9 ()
+   local code = "[1]"
+   local expected = {op = "list",
+		     args = {{type = "number", pos = 2, name = "1"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_10 ()
+   local code = "[1, 2, 3]"
+   local expected = {op = "list",
+		     args = {{type = "number", pos = 2, name = "1"},
+			     {type = "number", pos = 5, name = "2"},
+			     {type = "number", pos = 8, name = "3"}}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_11 ()
+   local code = "[x | Y]"
+   local expected = {op = "list",
+		     args = {{type = "atom", pos = 2, name = "x"}},
+		     rest_arg = {type = "variable", pos = 6, name = "Y"}}
+   assert_lex_parse(code, expected)
+end
+
+function test_lexer_and_parser_12 ()
+   local code = "[x | [Y | Z]]"
+   local expected = {
+      op = "list",
+      args = {{type = "atom", pos = 2, name = "x"}},
+      rest_arg = {
+	 op = "list",
+	 args = {{type = "variable", pos = 7, name = "Y"}},
+	 rest_arg = {
+	    type = "variable", pos = 11, name = "Z"}}}
    assert_lex_parse(code, expected)
 end
 
