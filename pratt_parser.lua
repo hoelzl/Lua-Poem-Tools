@@ -175,11 +175,14 @@ local function get_token (tokens, index, check_for_errors)
 end
 pratt.get_token = get_token
 
+local last_token
+
 -- Parse 'tokens' with 'right_binding_power', starting at position
 -- 'index' in 'environment'.
 local function parse (right_binding_power, tokens, index, env, override)
    local token = get_token(tokens, index)
    if token then
+      last_token = token
       local nud, op, rbp = null_denotation(token, env)
       local lhs, new_index = nud(rbp, op, token, tokens, index + 1, env, override)
       token = get_token(tokens, new_index)
@@ -196,9 +199,15 @@ local function parse (right_binding_power, tokens, index, env, override)
       end
       return lhs, new_index
    else
-      error("Cannot parse tokens starting at index " .. 
-	    tostring(index) ..
-	    ".")
+      if last_token and type(last_token) == 'table' and last_token.pos then
+	 error("Cannot parse input starting at position " ..
+	       tostring(last_token.pos) .. ".")
+      else
+	 print(last_token)
+	 error("Cannot parse tokens starting at index " .. 
+	       tostring(index) ..
+	       ".")
+      end
    end
 end
 pratt.parse = parse
@@ -242,21 +251,31 @@ local function infix_right (rbp, op, lhs, token, tokens, index, env, override)
 end
 pratt.infix_right = infix_right
 
-local function open_delimiter (separator, end_delimiter)
+local function open_delimiter (end_delimiter)
    local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
-      override = { [separator] = {}}
-      local rhs, new_index = parse(rbp, tokens, index, env, override)
-      local token = get_token(tokens, new_index)
-      local new_op = operator(token)
-      if  new_op ~= end_delimiter then
-	 error("Found " .. new_op .. " when expecting " ..
-	       end_delimiter .. ".")
+      local arg, new_index = parse(0, tokens, index, env, {})
+      local next_op = operator(get_token(tokens, new_index))
+      if next_op ~= end_delimiter then
+	 error("Expected " .. end_delimiter .. ", got " .. end_del)
       end
-      return rhs, new_index + 1
+      return arg, new_index + 1
    end
    return parse_delimiter_list
 end
 pratt.open_delimiter = open_delimiter
+
+local function arglist (rbp, op, token, tokens, index, env, override)
+   override = { [','] = { --[[ TODO...]] }}
+   local rhs, new_index = parse(rbp, tokens, index, env, override)
+   local token = get_token(tokens, new_index)
+   local new_op = operator(token)
+   if  new_op ~= end_delimiter then
+      error("Found " .. new_op .. " when expecting " ..
+	    end_delimiter .. ".")
+   end
+   return rhs, new_index + 1
+end
+
 
 local function list_delimiter (separator, end_delimiter)
    local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
@@ -284,11 +303,9 @@ local null_context = {
    ['?-']       = { right_binding_power = 100, 
 		    denotation = prefix_op },
    ['(']        = { right_binding_power = 0,
-		    denotation = open_delimiter(',', ')'),
-		    separators = {','},
-		    closing_delimiters = {')'}},
+		    denotation = open_delimiter(')') },
    ['[']        = { right_binding_power = 0,
-		    denotation = list_delimiter },   
+		    denotation = list_delimiter }, 
 }
 
 local left_context = {

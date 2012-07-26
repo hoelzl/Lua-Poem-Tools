@@ -261,7 +261,7 @@ function test_parse_13 ()
 			      lhs = tokens[3], 
 			      rhs = { op = '^',
 				      lhs = tokens[5],
-				      rhs = tokens[7]}}}
+				      rhs = tokens[7] }}}
    assert_pratt_parse(expected, tokens)
 end
 
@@ -276,7 +276,7 @@ function test_parse_14 ()
 			      lhs = tokens[3], 
 			      rhs = { op = '^',
 				      lhs = tokens[5],
-				      rhs = tokens[7]}}}
+				      rhs = tokens[7] }}}
    assert_pratt_parse(expected, tokens)
 end
 
@@ -289,8 +289,34 @@ function test_parse_15 ()
 		      lhs = { op = '*',
 			      lhs = { op = '^',
 				      lhs = tokens[1],
-				      rhs = tokens[3]}, 
-			      rhs = tokens[5]},
+				      rhs = tokens[3] },
+			      rhs = tokens[5] },
 		      rhs = tokens[7] }
    assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_1 ()
+   local tokens = {{ name = '(' }, { '1' }, { name = '+' }, { '2' }, { name = ')' }} 
+   local expected = { op = '+',
+		      lhs = tokens[2],
+		      rhs = tokens[4] }
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_2 ()
+   local tokens = {{ name = '(' }, { '1' }, { name = '+' }, { '2' }, { name = ')' },
+		   { name = '*' }, { '3' }} 
+   local expected = { op = '*',
+		      lhs = { op = '+',
+			      lhs = tokens[2],
+			      rhs = tokens[4] },
+		      rhs = tokens[7] }
+   assert_pratt_parse(expected, tokens)
+end
+
+function test_paren_parse_3 ()
+   local tokens = {{ name = '(' }, { '1' }, { name = '+' }, 
+		   { '2', pos = 1234 }, { name = ')' },
+		   { name = '*' }} 
+   assert_error(function () pratt.parse(0, tokens, 1, default_environment, {}) end)
 end
