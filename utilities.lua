@@ -1,8 +1,11 @@
 -- Some generally useful utilities.
 --
+
+require 'strict'
+lunatest = require 'lunatest'
+
 module('utilities', package.seeall)
 
--- require 'lunatest'
 
 -- Recursively print the contents of a table.
 local function print_rec(thing, skip_newline, level)
@@ -225,9 +228,9 @@ local function set_node_metatable_recursively (node)
 end
 utilities.set_node_metatable_recursively = set_node_metatable_recursively
 
-local function make_node (table)
-   table = table or {}   
-   return set_node_metatable(node)
+local function make_node (tab)
+   tab = tab or {}   
+   return set_node_metatable(tab)
 end
 utilities.make_node = make_node
 
@@ -248,17 +251,3 @@ local function assert_node (lexer, code, expected)
    assert_equal(expected, result);
 end
 utilities.assert_node = assert_node
-
-local function assert_pratt_parse (tokens, expected, rbp, env)
-   rbp = rbp or 0
-   env = env or pratt.default_environment
-   expected = set_node_metatable_recursively(expected)
-   local result = pratt.parse(tokens, 1, rbp, env)
-   assert_equal(getmetatable(expected), getmetatable(result),
-	       "Metatables do not match for " .. 
-		  utils.table_tostring(result) ..
-		  ", " .. 
-		  utils.table_tostring(expected) .. 
-		  ".")
-   assert_equal(expected, result);
-end

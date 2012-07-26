@@ -30,7 +30,7 @@
 -- opspec = operator specification, a table containing all pertinent
 --          information about an operator in a certain environment
 
--- require 'strict'
+require 'strict'
 local utils = require 'utilities'
 local assert, error, print, tostring, type = 
    assert, error, print, tostring, type
@@ -41,7 +41,6 @@ module('pratt_parser')
 local pratt = _G.pratt_parser
 
 local function operator (token, check_for_errors)
-   if (check_for_errors == null) then check_for_errors = true end
    if type(token) ~= 'table' then
       if check_for_errors then
 	 error("Token " .. tostring(token) .. " is not a table.")
@@ -54,7 +53,7 @@ local function operator (token, check_for_errors)
       if check_for_errors then
 	 error("Can't determine operator of " .. 
 	       utils.tostring(token) .. " at position " ..
-	       token.pos .. ".")
+	       (token.pos or "(unknown position)") .. ".")
       else
 	 return token
       end
@@ -64,6 +63,9 @@ end
 pratt.operator = operator
 
 local function null_context (environment)
+   if not environment then
+      error("Environment cannot be empty.")
+   end
    context = environment.null_context
    if not context then 
       error('No null context in environment ' .. environment .. '.')
@@ -72,11 +74,26 @@ local function null_context (environment)
 end
 pratt.null_context = null_context
 
+
 -- The default null denotation for tokens that are not operators
-local function default_null_denotation (op, rbp, tokens, index, env, override)
-   return environment.make_node(op)
+local function default_null_denotation (rbp, op, token, tokens, index, env, override)
+   if type(token) ~= "table" then
+      error("Token " .. tostring(token) .. " is not a table.")
+   end
+   return env.make_node(token), index
 end
 pratt.default_null_denotation = default_null_denotation
+
+-- The default left denotation for tokens that are not operators
+local function default_left_denotation (rbp, op, lhs, token, tokens,
+					index, env, override)
+   if type(token) ~= "table" then
+      error("Token " .. tostring(token) .. " is not a table.")
+   end
+   return env.make_node(token), index
+end
+pratt.default_left_denotation = default_left_denotation
+
 
 -- Return the null denotation, the operator, and the right binding
 -- power of 'token' in 'environment'.
@@ -96,6 +113,7 @@ local function null_denotation (token, env)
       return env.default_null_denotation, token, 0
    end
 end
+pratt.null_denotation = null_denotation
 
 local function left_context (environment)
    context = environment.left_context
@@ -112,23 +130,28 @@ local function replacement_for_op (op, opspec)
 end
 pratt.replacement_for_op = replacement_for_op
 
+local delete_op = {}
+pratt.delete_op = delete_op
+
 -- Return the denotation , the (possibly replaced) operator, its
 -- specification, and the left binding power for 'token' as multiple
 -- values.
 local function operator_specification (token, env, override)
-   if not token then return nil, nil, nil, 0 end
+   if not token then
+      return env.default_left_denotation, nil, nil, 0
+   end
    override = override or {}
    local op = operator(token)
    local opspec = override[op]
    if not opspec then
-      local context = left_context(environment)
+      local context = left_context(env)
       opspec = context[op]
    end
-   if not opspec then 
-      return nil, op, nil, 0
+   if not opspec or opspec == delete_op then 
+      return env.default_left_denotation, op, nil, 0
    else
-      return opspec.denotation,
-             replacement_for(op, opspec),
+      return opspec.denotation or env.default_left_denotation,
+             replacement_for_op(op, opspec),
              opspec,
 	     opspec.left_binding_power
    end
@@ -156,57 +179,71 @@ pratt.get_token = get_token
 -- 'index' in 'environment'.
 local function parse (right_binding_power, tokens, index, env, override)
    local token = get_token(tokens, index)
-   local nud, op, rbp = null_denotation(token, env)
-   local lhs, new_index = nud(op, rbp, tokens, index + 1, env, override)
-   token = get_token(tokens, new_index)
-   local den, op, opspec, lbp = operator_specification(token, env, override)
-   while (token and right_binding_power < lbp) do
-      lhs, new_index = den(op, lhs, rbp, tokens, new_index, env, override)
+   if token then
+      local nud, op, rbp = null_denotation(token, env)
+      local lhs, new_index = nud(rbp, op, token, tokens, index + 1, env, override)
       token = get_token(tokens, new_index)
-      den, op, opspec, lbp = operator_specification(token, env, override)
+      local den, op, opspec, lbp = operator_specification(token, env, override)
+      -- print("\nparse: ", new_index, op, lbp, right_binding_power)
+      while (token and right_binding_power < lbp) do
+	 if not den then
+	    error("No denotation for " .. tostring(op) .. ".")
+	 end
+	 lhs, new_index = den(right_binding_power, op, lhs, token, 
+			      tokens, new_index + 1, env, override)
+	 token = get_token(tokens, new_index)
+	 den, op, opspec, lbp = operator_specification(token, env, override)
+      end
+      return lhs, new_index
+   else
+      error("Cannot parse tokens starting at index " .. 
+	    tostring(index) ..
+	    ".")
    end
-   return lhs, new_index
 end
 pratt.parse = parse
 
-local function prefix_op (op, rbp, tokens, index, env, override)
+local function prefix_op (rbp, op, token, tokens, index, env, override)
    local rhs, new_index = parse(rbp, tokens, index, env, override)
-   return environment.make_node{ op = op, rhs = rhs }, new_index
+   return env.make_node{ op = op, rhs = rhs }, new_index
 end
 pratt.prefix_op = prefix_op
 
-local function postfix_op (op, lhs, rbp, tokens, index, env, override)
-   return environment.make_node{ op = op, lhs = lhs }
+local function postfix_op (rbp, op, lhs, token, tokens, index, env, override)
+   return env.make_node{ op = op, lhs = lhs }
 end
 pratt.postfix_op = postfix_op
 
-local function infix_left (op, lhs, rbp, tokens, index, env, override)
-   local rhs, new_index = parse(rbp, tokens, index, env, override)
-   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+local function infix_left (rbp, op, lhs, token, tokens, index, env, override)
+   local den, op, opspec, lbp = operator_specification(token, env, override)
+   local rhs, new_index = parse(lbp, tokens, index, env, override)
+   return env.make_node{ op = op, lhs = lhs, rhs = rhs }, 
           new_index
 end
 pratt.infix_left = infix_left
 
-local function infix_no (op, lhs, rbp, tokens, index, env, override)
+local function infix_no (rbp, op, lhs, token, tokens, index, env, override)
+   local den, op, opspec, lbp = operator_specification(token, env, override)
    local next_token = get_token(tokens, index)
    if left_binding_power(token) == rbp then
       error("Operator " .. tostring(op) .. " is not associative.")
    end
-   local rhs, new_index = parse(rbp, tokens, index, env, override)
-   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+   local rhs, new_index = parse(lbp, tokens, index, env, override)
+   return env.make_node{ op = op, lhs = lhs, rhs = rhs }, 
           new_index
 end
 pratt.infix_no = infix_no
 
-local function infix_right (op, lhs, rbp, tokens, index, env, override)
-   local rhs, new_index = parse(rbp - 0.5, tokens, index, env, override)
-   return environment.make_node{ op = op, lhs = lhs, rhs = rhs }, 
+local function infix_right (rbp, op, lhs, token, tokens, index, env, override)
+   local den, op, opspec, lbp = operator_specification(token, env, override)
+   local rhs, new_index = parse(lbp - 0.5, tokens, index, env, override)
+   return env.make_node{ op = op, lhs = lhs, rhs = rhs }, 
           new_index
 end
 pratt.infix_right = infix_right
 
 local function open_delimiter (separator, end_delimiter)
-   local function parse_delimiter_list (op, rbp, tokens, index, env, override)
+   local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
       override = { [separator] = {}}
       local rhs, new_index = parse(rbp, tokens, index, env, override)
       local token = get_token(tokens, new_index)
@@ -222,7 +259,7 @@ end
 pratt.open_delimiter = open_delimiter
 
 local function list_delimiter (separator, end_delimiter)
-   local function parse_delimiter_list (op, rbp, tokens, index, env, override)
+   local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
       override = { [','] = {}, ['|'] = {}}
       -- TODO: same code as parse_delimiter_list in open_delimiter
       local rhs, new_index = parse(rbp, tokens, index, env, override)
@@ -242,15 +279,15 @@ pratt.list_delimiter = list_delimiter
 -- These definitions should actually go into the Prolog parser.
 local null_context = {
    null_context = null_context;
-   [':-']       = { left_binding_power = 100, 
+   [':-']       = { right_binding_power = 100, 
 		    denotation = prefix_op },
-   ['?-']       = { left_binding_power = 100, 
+   ['?-']       = { right_binding_power = 100, 
 		    denotation = prefix_op },
-   ['(']        = { left_binding_power = 0,
+   ['(']        = { right_binding_power = 0,
 		    denotation = open_delimiter(',', ')'),
 		    separators = {','},
 		    closing_delimiters = {')'}},
-   ['[']        = { left_binding_power = 0,
+   ['[']        = { right_binding_power = 0,
 		    denotation = list_delimiter },   
 }
 
@@ -293,21 +330,23 @@ local left_context = {
 		    denotation = infix_left },
    ['-']        = { left_binding_power = 700,
 		    denotation = infix_left },
-   ['xor']      = { left_binding_power = 700,
+   ['xor']      = { left_binding_power = 900,
 		    denotation = infix_left },
-   ['*']        = { left_binding_power = 700,
+   ['*']        = { left_binding_power = 900,
 		    denotation = infix_left },
-   ['/']        = { left_binding_power = 700,
+   ['/']        = { left_binding_power = 900,
 		    denotation = infix_left },
-   ['mod']      = { left_binding_power = 700,
+   ['mod']      = { left_binding_power = 900,
 		    denotation = infix_left },
-   ['rem']      = { left_binding_power = 700,
+   ['rem']      = { left_binding_power = 900,
 		    denotation = infix_left },
-   ['^']        = { left_binding_power = 700,
+   ['^']        = { left_binding_power = 1100,
 		    denotation = infix_right },
 }
 
 local environment = { null_context = null_context,
 		      left_context = left_context,
-		      make_node = utils.make_node }
+		      make_node = utils.make_node,
+		      default_null_denotation = default_null_denotation,
+		      default_left_denotation = default_left_denotation }
 pratt.default_environment = environment
