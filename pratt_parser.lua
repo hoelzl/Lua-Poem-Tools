@@ -33,6 +33,8 @@
 -- lunatest chokes on this...
 -- require 'strict'
 local utils = require 'utilities'
+local lex = require 'basic_lexer'
+
 local assert, error, print, tostring, type = 
    assert, error, print, tostring, type
 local _G, io, table, string = _G, io, table, string
@@ -211,10 +213,49 @@ local function parse (right_binding_power, tokens, index, env, override)
       return lhs, new_index
    else
       error("Cannot parse input starting at " .. 
-	    error_position_string(index) .. ".")
+	    error_position_string(index) .. ".", 2)
    end
 end
 pratt.parse = parse
+
+local function parse_clauses_from_string (code, lexer, environment)
+   lexer = lexer or lex.lexer
+   environment = environment or pratt.default_environment
+   local clauses = {}
+   local tokens = lexer:match(code)
+   local index = 1
+   local result
+   while tokens[index] do
+      result, index = parse(0, tokens, index, environment, {})
+      local next_token = get_token(tokens, index)
+      if operator(next_token) == '.' then 
+	 clauses[#clauses + 1] = result
+	 index = index + 1
+      elseif next_token then
+	 error("Expected '.', received '" .. 
+	       operator(next_token) ..
+	       "' at position " .. tostring(next_token.pos) .. ".",
+	      2)
+      end
+   end
+   return clauses
+end
+pratt.parse_clauses_from_string = parse_clauses_from_string
+
+local function parse_file (file_name, lexer, environment)
+   local file = assert(io.open(file_name, 'r'),
+		       "Cannot open file " .. file_name)
+   local code = file:read("*all")
+   return parse_clauses_from_string(code, lexer, environment)
+end
+pratt.parse_file = parse_file
+
+--[[
+utils = require 'utilities';
+pratt = require 'pratt_parser';
+print()
+utils.print_table(pratt.parse_file('/Users/tc/Prog/Lua/Hacking/Poem/prolog_test.pl'))
+--]]
 
 local function prefix_op (rbp, op, token, tokens, index, env, override)
    local rhs, new_index = parse(rbp, tokens, index, env, override)

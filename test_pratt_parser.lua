@@ -21,7 +21,8 @@ local operator_specification = pratt.operator_specification
 local delete_op = pratt.delete_op
 local is_arg_cons, flatten_arg_cons = 
    pratt.is_arg_cons, pratt.flatten_arg_cons
-local parse = pratt.parse
+local parse, parse_clauses_from_string =
+   pratt.parse, pratt.parse_clauses_from_string
 
 local assert_node = utils.assert_node
 local set_node_metatable, set_node_metatable_recursively =
@@ -29,6 +30,14 @@ local set_node_metatable, set_node_metatable_recursively =
 local print_table = utils.print_table
 
 module('test_pratt_parser', package.seeall)
+
+local function assert_parse_tree_equal (expected, result, code)
+   set_node_metatable_recursively(expected)
+   set_node_metatable_recursively(result)
+   assert_equal(getmetatable(expected), getmetatable(result),
+		"Metatables do not match for " .. utils.table_tostring(code) .. ".")
+   assert_equal(expected, result);
+end
 
 local function assert_pratt_parse (expected, tokens, rbp, env, override)
    rbp = rbp or 0
@@ -51,14 +60,10 @@ local function assert_lex_parse (code, expected, lexer, rbp, env, override)
    rbp = rbp or 0
    env = env or pratt.default_environment
    override = override or {}
-   expected = set_node_metatable_recursively(expected)
    local lex_result = lexer:match(code)
    -- print_table(lex_result)
    local result = parse(rbp, lex_result, 1, env, override)
-   set_node_metatable_recursively(result)
-   assert_equal(getmetatable(expected), getmetatable(result),
-	       "Metatables do not match for " .. code .. ".")
-   assert_equal(expected, result);
+   assert_parse_tree_equal(expected, result, code)
 end
 
 local function assert_lex_parse_error (code, lexer, rbp, env, override)
@@ -926,4 +931,31 @@ function test_clause_7 ()
 			     args = {
 				{type = "variable", pos = 29, name = "Z"},
 				{type = "variable", pos = 32, name = "Y"}}}}})
+end
+
+function test_parse_clauses_1 ()
+   local clauses = parse_clauses_from_string [[
+     member(X, [X|Y]).
+     member(X, [Y|Z]) :- member(X, Z). ]]
+   local expected = {
+      {op = "compound-term",
+       functor = {type = "atom", pos = 6, name = "member"},
+       args = {{type = "variable", pos = 13, name = "X"},
+	       {op = "list",
+		rest_arg = {type = "variable", pos = 19, name = "Y"},
+		args = {{type = "variable", pos = 17, name = "X"}}}}},
+      {op = ":-",
+       lhs = {op = "compound-term",
+	      functor = {type = "atom", pos = 29, name = "member"},
+	      args = {
+		 {type = "variable", pos = 36, name = "X"},
+		 {op = "list", 
+		  rest_arg = {type = "variable", pos = 42, name = "Z"},
+		  args = {{type = "variable", pos = 40, name = "Y"}}}}},
+       rhs = {op = "compound-term",
+	      functor = {type = "atom", pos = 49, name = "member"},
+	      args = {
+		 {type = "variable", pos = 56, name = "X"},
+		 {type = "variable", pos = 59, name = "Z"}}}}}
+   assert_parse_tree_equal(expected, clauses)
 end
