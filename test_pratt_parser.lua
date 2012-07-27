@@ -616,6 +616,14 @@ function test_lexer_and_parser_12 ()
    assert_lex_parse(code, expected)
 end
 
+function test_lexer_and_parser_13 ()
+   local code = "X = Y"
+   local expected = {op = "=",
+		     lhs = {type = "variable", pos = 1, name = "X"},
+		     rhs = {type = "variable", pos = 5, name = "Y"}}
+   assert_lex_parse(code, expected)
+end
+
 function test_lexer_and_parser_fun_1 ()
    local code = "f()"
    local expected = {op = "compound-term", 

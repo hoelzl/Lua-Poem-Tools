@@ -76,3 +76,7 @@ function test_map ()
    assert_table_equal({}, utils.map(add1, {}))
    assert_table_equal({2,3,4}, utils.map(add1, {1,2,3}))
 end
+
+function test_similar ()
+   -- TODO: Write tests
+end

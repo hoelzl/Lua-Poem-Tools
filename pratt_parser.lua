@@ -440,6 +440,8 @@ local left_context = {
 		    denotation = infix_no },
    ['is']       = { left_binding_power = 500,
 		    denotation = infix_no },
+   ['=']        = { left_binding_power = 500,
+		    denotation = infix_no },
    [':']        = { left_binding_power = 600,
 		    denotation = infix_no },
    ['+']        = { left_binding_power = 700,

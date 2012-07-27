@@ -9,5 +9,6 @@ lunatest.suite('test_pratt_parser')
 -- lunatest.suite('test_poem_parser')
 lunatest.suite('test_poem_runtime')
 lunatest.suite('test_unification')
+lunatest.suite('test_simplification')
 
 lunatest.run()

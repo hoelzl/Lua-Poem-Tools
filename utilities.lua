@@ -208,6 +208,38 @@ local node_metatable = {
    __eq = utilities.equal
 }
 
+-- Check whether the contents of two tables are similar.  We ignore
+-- 'pos' fields and match variables with anything.  We don't try to
+-- keep track of variable unifications, so this is a rather crude
+-- test.
+local function similar (t1, t2)
+   for k,v in pairs(t1) do
+      if k ~= 'pos' and t2[k] ~= v then
+	 if type(t2[k]) ~= 'table' or t2[k].type ~= 'variable' then
+	    -- print("table 1: ", k, v, "table 2:", k, t2[k])
+	    return false
+	 end
+      end
+   end
+   for k,v in pairs(t2) do
+      if k ~= 'pos' and t1[k] ~= v then
+	 if type(t1[k]) ~= 'table' or t1[k].type ~= 'variable' then
+	    -- print("table 1: ", k, v, "table 2:", k, t2[k])
+	    return false
+	 end
+      end
+   end
+   return true
+end
+utilities.similar = similar
+
+local similar_metatable = {
+   __tostring = function (t)
+      return utilities.table_tostring(t, 15)
+   end,
+   __eq = utilities.similar
+}
+
 local function set_node_metatable (node)
    if (type(node) == 'table') then
       setmetatable(node, node_metatable)
@@ -218,11 +250,12 @@ local function set_node_metatable (node)
 end
 utilities.set_node_metatable = set_node_metatable
 
-local function set_node_metatable_recursively (node)
+local function set_node_metatable_recursively (node, mt)
+   mt = mt or node_metatable
    if (type(node) == 'table') then
-      setmetatable(node, node_metatable)
+      setmetatable(node, mt)
       for _, n in pairs(node) do
-	 set_node_metatable_recursively(n)
+	 set_node_metatable_recursively(n, mt)
       end
    end
    return node
@@ -252,3 +285,23 @@ local function assert_node (lexer, code, expected)
    assert_equal(expected, result);
 end
 utilities.assert_node = assert_node
+
+local function assert_parse_tree_equal (expected, result, code)
+   code = code or expected
+   set_node_metatable_recursively(expected)
+   set_node_metatable_recursively(result)
+   assert_equal(getmetatable(expected), getmetatable(result),
+		"Metatables do not match for " .. table_tostring(code) .. ".")
+   assert_equal(expected, result);
+end
+utilities.assert_parse_tree_equal = assert_parse_tree_equal
+
+local function assert_parse_tree_similar (expected, result, code)
+   code = code or expected
+   set_node_metatable_recursively(expected, similar_metatable)
+   set_node_metatable_recursively(result, similar_metatable)
+   assert_equal(getmetatable(expected), getmetatable(result),
+		"Metatables do not match for " .. table_tostring(code) .. ".")
+   assert_equal(expected, result);
+end
+utilities.assert_parse_tree_similar = assert_parse_tree_similar
