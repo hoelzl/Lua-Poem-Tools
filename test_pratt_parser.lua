@@ -24,20 +24,13 @@ local is_arg_cons, flatten_arg_cons =
 local parse, parse_clauses_from_string =
    pratt.parse, pratt.parse_clauses_from_string
 
-local assert_node = utils.assert_node
+local assert_node, assert_parse_tree_equal =
+   utils.assert_node, utils.assert_parse_tree_equal
 local set_node_metatable, set_node_metatable_recursively =
    utils.set_node_metatable, utils.set_node_metatable_recursively
 local print_table = utils.print_table
 
 module('test_pratt_parser', package.seeall)
-
-local function assert_parse_tree_equal (expected, result, code)
-   set_node_metatable_recursively(expected)
-   set_node_metatable_recursively(result)
-   assert_equal(getmetatable(expected), getmetatable(result),
-		"Metatables do not match for " .. utils.table_tostring(code) .. ".")
-   assert_equal(expected, result);
-end
 
 local function assert_pratt_parse (expected, tokens, rbp, env, override)
    rbp = rbp or 0
@@ -756,7 +749,9 @@ function test_lexer_and_parser_fun_9 ()
 		     op = "+",	  
 		     delimited = true,
 		     lhs = {type = "number", pos = 19, name = "1"},
-		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
+		     rhs = {
+			op = "-", 
+			rhs = {type = "number", pos = 25, name = "2"}}}}}}}}
    assert_lex_parse(code, expected)
 end
 
@@ -783,7 +778,9 @@ function test_lexer_and_parser_fun_10 ()
 		     op = "+",
 		     delimited = true,
 		     lhs = {type = "number", pos = 19, name = "1"},
-		     rhs = {type = "number", pos = 23, name = "- 2"}}}}}}}
+		     rhs = {
+			op = "-", 
+			rhs = {type = "number", pos = 25, name = "2"}}}}}}}}
    assert_lex_parse(code, expected)
 end
 
@@ -803,7 +800,9 @@ function test_lexer_and_parser_fun_11 ()
 		  args = {
 		     {op = "+",
 		      lhs = {type = "number", pos = 19, name = "1"},
-		      rhs = {type = "number", pos = 23, name = "- 2"}}}}}}},
+		     rhs = {
+			op = "-", 
+			rhs = {type = "number", pos = 25, name = "2"}}}}}}}},
       lhs = {op = "compound-term", 
 	     functor = {type = "atom", pos = 1, name = "f"},
 	     args = {{op = "compound-term", 

@@ -87,14 +87,15 @@ local lexer_table = {
    
    number = V'ws' * 
       node("number",
-	   (P'-')^-1 * V'ws' * digit^1 * (P'.' * digit^1)^-1 *
-	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
-      V'ws' +
-      V'ws' *
-      node("number",
-	   (P'-')^-1 * V'ws' * P'.' * digit^1 *
+	   digit^1 * (P'.' * digit^1)^-1 *
 	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
       V'ws';
+      -- +
+      -- V'ws' *
+      -- node("number",
+      -- 	   P'.' * digit^1 *
+      -- 	      (S'eE' * (P'-')^-1 * digit^1)^-1) *
+      -- V'ws';
  
    string = V'ws' * P'"' *
       node("string",
