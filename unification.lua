@@ -1,17 +1,16 @@
 -- An implementation of destructive unification
 --
 
-module('unification', package.seeall)
-
 local utils = require 'utilities'
 local runtime = require 'poem_runtime'
 
-local unification = {}
 local trail = runtime.trail
 
 local unbound = {'unbound'}
 
 local variable_counter = 1
+
+module('unification', package.seeall)
 
 local function unbound_value ()
    return unbound

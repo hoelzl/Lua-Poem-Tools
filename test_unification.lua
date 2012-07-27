@@ -1,9 +1,7 @@
 -- Tests of the unification algorithm
 
-module('test_poem_unification', package.seeall)
-
 local runtime = require 'poem_runtime'
-local unification = require 'poem_unification'
+local unification = require 'unification'
 local test = require 'lunatest'
 
 local trail, clear_trail = runtime.trail, runtime.clear_trail
@@ -14,6 +12,8 @@ local set_binding, undo_bindings =
    unification.set_binding, unification.undo_bindings
 local is_variable, is_bound = unification.is_variable, unification.is_bound
 local deref, unify = unification.deref, unification.unify
+
+module('test_unification', package.seeall)
 
 function test_make_variable ()
    local var = make_variable()

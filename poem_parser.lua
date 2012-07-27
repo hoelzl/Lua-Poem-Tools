@@ -4,7 +4,7 @@ module('poem_parser', package.seeall)
 
 local lpeg = require 'lpeg'
 local utils = require 'utilities'
-local bp = require 'basic_parser'
+local pp = require 'basic_parser'
 
 local P, R, S, V = 
    lpeg.P, lpeg.R, lpeg.S, lpeg.V

@@ -3,7 +3,7 @@
 module('poem_runtime', package.seeall)
 
 local utils = require 'utilities'
-local pp = require 'poem_parser'
+-- local pp = require 'pratt_parser'
 
 -- The trail for undoing unifications
 local trail = {}

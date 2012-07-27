@@ -4,7 +4,7 @@ module('prolog_parser', package.seeall)
 
 local lpeg = require 'lpeg'
 local utils = require 'utilities'
-local bpl = require 'basic_plexer'
+local pp = require 'pratt_parser'
 
 local P, R, S, V = 
    lpeg.P, lpeg.R, lpeg.S, lpeg.V
@@ -12,7 +12,7 @@ local P, R, S, V =
 local C, Cb, Cc, Cg, Cs, Ct =
    lpeg.C, lpeg.Cb, lpeg.Cc, lpeg.Cg, lpeg.Cs, lpeg.Ct
 
-local prolog_char_syntax_table = table.merge(bpl.char_syntax_table)
+local prolog_char_syntax_table = table.merge(pp.char_syntax_table)
 prolog_parser.char_syntax_table = prolog_char_syntax_table
 
 
