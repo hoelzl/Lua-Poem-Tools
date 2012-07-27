@@ -186,7 +186,13 @@ function test_disjoin ()
 end
 
 function test_extract_head_and_body ()
-
+   local code = 'f(X, Y, Z) :- X = Y; g(Z, Z, Z).'
+   local clause = parse_clauses_from_string(code)[1]
+   assert_table(clause)
+   local head, body = extract_head_and_body(clause)
+   assert_parse_tree_equal(clause,
+			   make_clause(head, body),
+			   code)
 end
 
 function test_simplify_clause_head_1 ()
