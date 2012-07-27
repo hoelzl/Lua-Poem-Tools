@@ -976,4 +976,17 @@ end
 function test_parse_file_2 ()
    local clauses = parse_file('test_data/garbage_collection_01.pl')
    assert_equal(80, #clauses)
+   -- print_table(clauses)
+end
+
+function test_parse_file_3 ()
+   local clauses = parse_file('test_data/garbage_collection_02.pl')
+   assert_equal(106, #clauses)
+   -- print_table(clauses)
+end
+
+function test_parse_file_4 ()
+   local clauses = parse_file('test_data/garbage_collection_03.pl')
+   assert_equal(98, #clauses)
+   -- print_table(clauses)
 end

@@ -303,9 +303,13 @@ pratt.infix_right = infix_right
 local function open_delimiter (end_delimiter)
    local function parse_delimiter_list (rbp, op, token, tokens, index, env, override)
       local arg, new_index = parse(0, tokens, index, env, {})
-      local next_op = operator(get_token(tokens, new_index))
+      local next_token = get_token(tokens, new_index)
+      local next_op = operator(next_token)
       if next_op ~= end_delimiter then
-	 error("Expected " .. end_delimiter .. ", got " .. tostring(next_op))
+	 error("Expected '" .. end_delimiter .. "', received '" .. 
+	       operator(next_token) ..
+	       "' at position " .. tostring(next_token.pos) .. ".",
+	       2)
       end
       arg.delimited = true
       return arg, new_index + 1
@@ -424,6 +428,8 @@ local left_context = {
 		    replacement = 'implies' },
    ['implies']  = { left_binding_power = 250,
 		    denotation = infix_right },
+   ['<=>']       = { left_binding_power = 250,
+		     denotation = infix_right },
    [',']        = { left_binding_power = 300,
 		    denotation = infix_right,
 		    replacement = 'and'},
@@ -435,16 +441,16 @@ local left_context = {
 		    denotation = infix_no },
    ['=<']       = { left_binding_power = 500,
 		    denotation = infix_no },
-   ['<']        = { left_binding_power = 500,
+   ['>']        = { left_binding_power = 500,
 		    denotation = infix_no },
-   ['<=']       = { left_binding_power = 500,
+   ['>=']       = { left_binding_power = 500,
 		    denotation = infix_no },
    ['is']       = { left_binding_power = 500,
 		    denotation = infix_no },
    ['=']        = { left_binding_power = 500,
 		    denotation = infix_no },
    [':']        = { left_binding_power = 600,
-		    denotation = infix_no },
+		    denotation = infix_left },
    ['+']        = { left_binding_power = 700,
 		    denotation = infix_left },
    ['-']        = { left_binding_power = 700,
