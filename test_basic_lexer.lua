@@ -14,6 +14,10 @@ function test_atom_lexer()
 	       {type = "atom", pos = 1, name = "foo"})
    assert_node(atom_lexer, "fooBarBaz", 
 	       {type = "atom", pos = 1, name = "fooBarBaz"})
+   assert_node(atom_lexer, "s0",
+	       {type = "atom", pos = 1, name = "s0"})
+   assert_node(atom_lexer, "s_0_asdf",
+	       {type = "atom", pos = 1, name = "s_0_asdf"})
    assert_node(atom_lexer, "&*",
 	       {type = "atom", pos = 1, name = "&*"})
    assert_node(atom_lexer, "&*%$",

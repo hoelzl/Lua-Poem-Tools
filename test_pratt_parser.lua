@@ -23,6 +23,7 @@ local is_arg_cons, flatten_arg_cons =
    pratt.is_arg_cons, pratt.flatten_arg_cons
 local parse, parse_clauses_from_string =
    pratt.parse, pratt.parse_clauses_from_string
+local parse_file = pratt.parse_file
 
 local assert_node, assert_parse_tree_equal =
    utils.assert_node, utils.assert_parse_tree_equal
@@ -965,4 +966,14 @@ function test_parse_clauses_1 ()
 		 {type = "variable", pos = 56, name = "X"},
 		 {type = "variable", pos = 59, name = "Z"}}}}}
    assert_parse_tree_equal(expected, clauses)
+end
+
+function test_parse_file_1 ()
+   local clauses = parse_file('test_data/prolog_test.pl')
+   assert_equal(3, #clauses)
+end
+
+function test_parse_file_2 ()
+   local clauses = parse_file('test_data/garbage_collection_01.pl')
+   assert_equal(80, #clauses)
 end

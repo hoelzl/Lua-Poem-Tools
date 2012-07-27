@@ -195,6 +195,7 @@ end
 local function parse (right_binding_power, tokens, index, env, override)
    local token = get_token(tokens, index)
    if token then
+      -- print("Parsing token: ", token)
       last_token = token
       local nud, op, rbp = null_denotation(token, env)
       local lhs, new_index = nud(rbp, op, token, tokens, index + 1, env, override)
@@ -371,7 +372,7 @@ local function list_delimiter (rbp, op, token, tokens, index, env, override)
 				    denotation = collect_arg }}
    local next_op = operator(get_token(tokens, index))
    if next_op == ']' then
-      return env.make_node{op = 'list', args = {}}
+      return env.make_node{op = 'list', args = {}}, index + 1
    end
    local args, new_index = parse(0, tokens, index, env, new_override)
    next_op = operator(get_token(tokens, new_index))
