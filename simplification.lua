@@ -8,6 +8,7 @@ local _G, io, table, string = _G, io, table, string
 
 local table_tostring, print_table = 
    utils.table_tostring, utils.print_table
+local clone, merge, slice = utils.clone, utils.merge, utils.slice
 
 module('simplification')
 
@@ -78,6 +79,52 @@ local function variable_equal (var1, var2)
        var1.name == var2.name)
 end
 simp.variable_equal = variable_equal
+
+local arglist_vars = {}
+
+local function expand_arglist_vars (length)
+   arglist_vars_length = #arglist_vars
+   if arglist_vars_length >= length then 
+      return
+   else
+      for i = arglist_vars_length + 1, length do
+	 arglist_vars[i] = make_variable()
+      end
+   end
+end
+expand_arglist_vars(10)
+
+local arglists = {}
+simp.arglists = arglists
+
+local function arglist_of_length (length)
+   local arglist = arglists[length]
+   if arglist then
+      return arglist
+   else
+      expand_arglist_vars(length)
+      arglist = slice(arglist_vars, 1, length)
+      arglists[length] = arglist
+      return arglist
+   end
+end
+simp.arglist_of_length = arglist_of_length
+
+local function substitute_variable (new_var, old_var, term)
+   if (type(term) ~= 'table') then
+      return term
+   elseif variable_equal(old_var, term) then
+      return new_var
+   elseif variable_equal(new_var, term) then
+      return new_var
+   end
+   local result = clone(term)
+   for k, v in pairs(result) do
+      result[k] = substitute_variable(new_var, old_var, v)
+   end
+   return result
+end
+simp.substitute_variable = substitute_variable
 
 local function conjoin (lhs, rhs)
    -- We pick off the easy simplification that might be useful when
