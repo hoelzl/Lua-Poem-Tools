@@ -22,7 +22,8 @@ local make_variable, make_clause, make_unification =
 local variable_equal = simp.variable_equal
 local arglists, arglist_of_length = 
    simp.arglists, simp.arglist_of_length
-local substitute_variable = simp.substitute_variable
+local substitute_variable, substitute_variables 
+   = simp.substitute_variable, simp.substitute_variables
 local true_value, is_true_value = simp.true_value, simp.is_true_value
 local conjoin, disjoin = simp.conjoin, simp.disjoin
 local extract_head_and_body = simp.extract_head_and_body
@@ -271,6 +272,29 @@ function test_substitute_variable_7 ()
 		    new_var}}
    assert_parse_tree_equal(result, 
 			   substitute_variable(new_var, old_var, term))
+end
+
+function test_substitute_variables_1 ()
+   local old_var_1 = { type = 'variable', name = "Old 1" }
+   local new_var_1 = { type = 'variable', name = "New 1" }
+   local old_var_2 = { type = 'variable', name = "Old 2" }
+   local new_var_2 = { type = 'variable', name = "New 2" }
+   local term = {op = "compound-term",
+		 functor = {type = "atom", pos = 1, name = "f"},
+		 args = {
+		    old_var_1,
+		    {type = "variable", pos = 6, name = "Y"},
+		    old_var_2}}
+   local result = {op = "compound-term",
+		 functor = {type = "atom", pos = 1, name = "f"},
+		 args = {
+		    new_var_1,
+		    {type = "variable", pos = 6, name = "Y"},
+		    new_var_2}}
+   assert_parse_tree_equal(
+      result, 
+      substitute_variables({{new_var_1, old_var_1}, {new_var_2, old_var_2}},
+			   term))
 end
 
 function test_conjoin ()

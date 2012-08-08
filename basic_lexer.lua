@@ -84,7 +84,7 @@ local lexer_table = {
    -- TODO: Keep a line count for error messages
    comment = P'%' * V'any_char_but_newline'^0 * V'newline_or_eof';
    ws = (S('\r\n\f\t ') + V'comment')^0;
-   
+
    number = V'ws' * 
       node("number",
 	   digit^1 * (P'.' * digit^1)^-1 *
@@ -129,11 +129,18 @@ local lexer_table = {
       V'quoted_atom';
 
    constant = V'number' + V'atom' + V'string';
-
+ 
+   -- This triggers a bug in lpeg when compiled with Clang. --tc
+   --[[
    named_variable = V'ws' *
       node("variable", 
 	   R'AZ' * V'word_char'^0 + 
-	      P'_' * R('az', 'AZ', '09')^1 * V'word_char'^0) *
+	   P'_' * R('az', 'AZ', '09')^1 * V'word_char'^0) *
+      V'ws';
+   --]]
+   named_variable = V'ws' *
+      node("variable", 
+	   R'AZ' * V'word_char'^0) *
       V'ws';
    anonymous_variable = V'ws' *
       node("anonymous_variable", P'_') *

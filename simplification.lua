@@ -9,6 +9,7 @@ local _G, io, table, string = _G, io, table, string
 local table_tostring, print_table = 
    utils.table_tostring, utils.print_table
 local clone, merge, slice = utils.clone, utils.merge, utils.slice
+local equal = utils.equal
 
 module('simplification')
 
@@ -126,6 +127,14 @@ local function substitute_variable (new_var, old_var, term)
 end
 simp.substitute_variable = substitute_variable
 
+local function substitute_variables (var_pairs, term)
+   for _, vars in pairs(var_pairs) do
+      term = substitute_variable(vars[1], vars[2], term)
+   end 
+   return term
+end
+simp.substitute_variables = substitute_variables
+
 local function conjoin (lhs, rhs)
    -- We pick off the easy simplification that might be useful when
    -- modifying a term that was artificially split.
@@ -167,6 +176,8 @@ simp.extract_head_and_body = extract_head_and_body
 
 local function simplify_clause_head (clause)
    local head, body = extract_head_and_body(clause)
+   assert(head.op == 'compound-term',
+	 "Can only normalize clauses whose head is a compound term.")
    local args = head.args
    for i,arg in ipairs(args) do
       if not is_variable(arg) then
@@ -178,3 +189,36 @@ local function simplify_clause_head (clause)
    return head, body
 end
 simp.simplify_clause_head = simplify_clause_head
+
+local function find_term_substitution (substitutions, term)
+   for _, t in ipairs(substitutions) do
+      -- TODO: We should really define a term_equal function that does
+      -- the proper thing for terms.
+      if equal(t[1], term) then
+	 return t[2]
+      end
+   end
+   return false
+end
+
+local function normalize_clause (clause)
+   local head, body = extract_head_and_body(clause)
+   assert(head.op == 'compound-term',
+	 "Can only normalize clauses whose head is a compound term.")
+   local arglist = head.args
+   local num_args = #arglist
+   local normal_arglist = arglist_of_length(num_args)
+   local substitutions = {}
+   local unifications = {}
+   --[[
+   for i = 1, num_args do
+      local term = arglist[i]
+      if not is_variable(arg) then 
+	 unifications[#unifications + 1] = { normal_arglist[i], term }
+      else
+	 if contains_term(substitutions, term) then 
+	    unifications[#unifications + 1] = { normal_arglist[i]
+	 substitutions[#substitutions + 1] = 
+	 end
+    --]]
+end

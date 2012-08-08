@@ -25,7 +25,7 @@ function test_atom_lexer()
    assert_node(atom_lexer, "'foo Bar Baz'", 
 	       {type = "atom", pos = 1, name = "foo Bar Baz"})
 end
- 
+
 function test_atom_operator_lexer ()
    local operator_lexer = lex.make_lexer('atom_operator')
    assert_node(operator_lexer, "=", 
